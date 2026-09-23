@@ -1,10 +1,12 @@
 """Run: python3 -m unittest discover -s scripts -p 'test_*.py'."""
 import contextlib
 import io
+import json
 import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 import polish
 
 
@@ -116,6 +118,36 @@ class RevisionTests(unittest.TestCase):
                 code = polish.main(['report', str(source), str(target), '--lightweight'])
             self.assertEqual(code, 0)
             self.assertTrue(out.getvalue().startswith('# 推敲の評価シート'))
+
+    def test_keep_file_protects_listed_terms_and_ignores_comments(self):
+        with tempfile.TemporaryDirectory() as folder:
+            before, after, keep = Path(folder)/'a.md', Path(folder)/'b.md', Path(folder)/'keep.txt'
+            before.write_text('ピックゴーで運びます。', encoding='utf-8')
+            after.write_text('ピックアップで運びます。', encoding='utf-8')
+            keep.write_text('# 社名・サービス名\n\nピックゴー\n', encoding='utf-8')
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = polish.main(['verify', str(before), str(after), '--lightweight', '--keep-file', str(keep)])
+            self.assertEqual(code, 1)
+            self.assertEqual(json.loads(out.getvalue())['changes']['named_terms']['removed'], {'ピックゴー': 1})
+
+    def test_keep_file_can_be_given_by_environment_variable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            before, after, keep = Path(folder)/'a.md', Path(folder)/'b.md', Path(folder)/'keep.txt'
+            before.write_text('ピックゴーで運びます。', encoding='utf-8')
+            after.write_text('ピックアップで運びます。', encoding='utf-8')
+            keep.write_text('ピックゴー\n', encoding='utf-8')
+            with mock.patch.dict(os.environ, {'POLISH_KEEP_FILE': str(keep)}), contextlib.redirect_stdout(io.StringIO()):
+                code = polish.main(['verify', str(before), str(after), '--lightweight'])
+            self.assertEqual(code, 1)
+
+    def test_missing_keep_file_is_an_error(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder)/'a.md'
+            source.write_text('確認します。', encoding='utf-8')
+            with contextlib.redirect_stderr(io.StringIO()):
+                code = polish.main(['analyze', str(source), '--lightweight', '--keep-file', str(Path(folder)/'none.txt')])
+            self.assertEqual(code, 2)
 
     def test_undefined_internal_name_is_flagged_at_first_use_only(self):
         source = 'keep.dic を作り直します。keep.dic は小さいです。'
