@@ -100,7 +100,10 @@ cat > "$BIN/polish-japanese" <<EOF
 #!/bin/bash
 # polish-japanese のラッパー（scripts/install.sh が生成）。辞書を自動で指定して polish.py を実行する。
 # --lightweight / --dic / --user-dic が明示されたときは、その指定を優先して辞書を足さない。
+# ~/.config/polish-japanese/keep.txt があれば、常に保護する語のリストとして渡す。
 set -euo pipefail
+KEEP_FILE="\${POLISH_KEEP_FILE:-\$HOME/.config/polish-japanese/keep.txt}"
+if [ -f "\$KEEP_FILE" ]; then export POLISH_KEEP_FILE="\$KEEP_FILE"; fi
 PY="$PY"
 SCRIPT="$REPO/scripts/polish.py"
 for arg in "\$@"; do
@@ -113,6 +116,19 @@ exec "\$PY" "\$SCRIPT" "\$@" --dic "$SYS_DIC" --user-dic "$BASE/dic/neologd.dic"
 EOF
 chmod +x "$BIN/polish-japanese"
 echo "OK: $BIN/polish-japanese"
+fi
+
+step "常に保護する語のリストを用意"
+KEEP="$HOME/.config/polish-japanese/keep.txt"
+if [ -f "$KEEP" ]; then
+  echo "既にあります: $KEEP"
+else
+  mkdir -p "$(dirname "$KEEP")"
+  cat > "$KEEP" <<'EOF'
+# 推敲しても変えてはいけない語（社名・サービス名・製品名など）を1行に1語ずつ書く。
+# 空行と # で始まる行は無視される。polish-japanese の全コマンドで --keep と同じように扱われる。
+EOF
+  echo "作成しました: $KEEP"
 fi
 
 step "動作確認"
