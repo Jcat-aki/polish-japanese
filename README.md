@@ -28,8 +28,9 @@ Claude Code のスキルとして使えます。ChatGPT / Codex 向けの設定�
 ```text
 SKILL.md                     スキル本体（エージェントが読む手順）
 scripts/polish.py            診断・定型修正・照合の CLI
-scripts/test_polish.py       テスト
+scripts/test_*.py            テスト
 scripts/install.sh           一括導入スクリプト
+scripts/userdic.py           keep.txt の語を固有名詞として登録するユーザー辞書を作る
 references/editing.md        推敲の観点と終了条件
 references/runtime.md        MeCab・辞書の準備と CLI の詳細
 references/sources-and-scope.md  参照資料と類似ツールとの比較範囲
@@ -50,6 +51,7 @@ git clone git@github.com:Jcat-aki/polish-japanese.git ~/workspace/polish-japanes
 2. MeCab（mecab-python3）と unidic-lite を入れた venv を作る
 3. mecab-unidic-NEologd の辞書データを取得し、ハッシュを照合してユーザー辞書を作る
 4. 辞書を自動で指定する `polish-japanese` コマンドを `~/.local/bin` に置く
+5. 常に保護する語のリスト `~/.config/polish-japanese/keep.txt` を用意する（既にあれば触らない）。ここに書いた語は1語の固有名詞として解析される
 
 必要なもの: `uv` か Python 3.10 以降、`curl`。導入先は `POLISH_JA_HOME`（既定 `~/.local/share/polish-japanese`）と `POLISH_JA_BIN`（既定 `~/.local/bin`）で変えられます。ディスクは約 1.3GB 使います。手動で導入したい場合や辞書の詳細は [references/runtime.md](references/runtime.md) を参照してください。
 
@@ -88,6 +90,25 @@ python3 scripts/polish.py analyze draft.md --lightweight
 
 `install.sh` を使わない場合は `python3 scripts/polish.py <コマンド> ... --dic <UniDic> --user-dic <neologd.dic>` で実行します。基本辞書は `NEOLOGD_DIC` 環境変数でも指定できます。
 
+### 常に保護する語
+
+社名・サービス名・製品名など、推敲しても変えてはいけない語は `~/.config/polish-japanese/keep.txt` に1行1語で書いておくと、`polish-japanese` の全コマンドで自動的に保護されます（`--keep` を毎回付けるのと同じ）。
+
+```text
+# 空行と # で始まる行は無視されます
+ピックゴー
+CBcloud
+```
+
+ここに書いた語は、形態素解析でも1語の固有名詞として扱われます。`polish-japanese` が `keep.txt` から小さなユーザー辞書（`~/.local/share/polish-japanese/dic/keep.dic`）を作り、NEologd と一緒に読み込むためです。`keep.txt` を編集すると、次の実行時に自動で作り直します（1 秒ほど）。
+
+| 語 | 登録前 | 登録後 |
+| --- | --- | --- |
+| ピックゴー | ピック／ゴー | ピックゴー［固有名詞］ |
+| CBcloud | CB／cloud | CBcloud［固有名詞］ |
+
+空白・カンマ・引用符を含む語は1語として登録できないため、辞書には入れず保護（`--keep`）だけに使います。別のファイルを使うときは `--keep-file <ファイル>` か環境変数 `POLISH_KEEP_FILE` で指定します。
+
 `verify` の終了コード:
 
 | コード | 意味 |
@@ -118,13 +139,13 @@ python3 scripts/polish.py analyze draft.md --lightweight
 ## テスト
 
 ```bash
-python3 scripts/test_polish.py            # 辞書なしで動くテスト（MeCab 連携の2件はスキップ）
+python3 -m unittest discover -s scripts -p 'test_*.py'   # 辞書なしで動くテスト（MeCab 連携はスキップ）
 
 # 辞書を使う統合テストも含めて実行する
 BASE=~/.local/share/polish-japanese
 POLISH_TEST_DIC=$BASE/.venv/lib/python3.12/site-packages/unidic_lite/dicdir \
 POLISH_TEST_USER_DIC=$BASE/dic/neologd.dic \
-  $BASE/.venv/bin/python scripts/test_polish.py
+  $BASE/.venv/bin/python -m unittest discover -s scripts -p 'test_*.py'
 ```
 
 ## 注意点
