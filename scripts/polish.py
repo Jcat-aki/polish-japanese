@@ -262,6 +262,81 @@ def fix(text, analyzer, keep=()):
     return candidate, {'applied': edits, 'verification': check, 'remaining': inspect(candidate, analyzer, keep)['findings']}
 
 
+SENTENCE = re.compile(r'[^。！？!?\r\n]+[。！？!?]?')
+STATUS_LABEL = {'no-mechanical-difference': '機械的な差異なし', 'needs-review': '表現差あり（目で確認が必要）',
+                'changed-protected-content': '保護対象が変化（要修正）'}
+
+
+def cell(text):
+    # 表のセルに入れるため、HTMLタグ・改行・区切り文字を除く
+    text = re.sub(r'<[^>]*>', '', text)
+    return re.sub(r'\s+', ' ', text).strip().replace('|', '\\|')
+
+
+def report(before, after, analyzer, keep=()):
+    """修正前後を比べ、何がどう変わったかをMarkdownの評価シートにまとめる。"""
+    b_report, a_report = inspect(before, analyzer, keep), inspect(after, analyzer, keep)
+    check = verify(before, after, analyzer, keep)
+    key = lambda f: (f['rule'], f['text'])
+    b_count, a_count = Counter(map(key, b_report['findings'])), Counter(map(key, a_report['findings']))
+    resolved, remaining, new = b_count - a_count, b_count & a_count, a_count - b_count
+
+    b_spans = [m.span() for m in SENTENCE.finditer(before)]
+    a_spans = [m.span() for m in SENTENCE.finditer(after)]
+    rows = []
+    matcher = difflib.SequenceMatcher(None, [before[a:b] for a, b in b_spans], [after[a:b] for a, b in a_spans], autojunk=False)
+    groups = []
+    for op, i, j, k, l in matcher.get_opcodes():
+        if op == 'equal':
+            continue
+        # 隣り合う文の置換は difflib が一塊にするため、文の数が同じなら1文ずつ対応させる
+        if op == 'replace' and j - i == l - k:
+            groups += [(i + n, i + n + 1, k + n, k + n + 1) for n in range(j - i)]
+        else:
+            groups.append((i, j, k, l))
+    for i, j, k, l in groups:
+        old = ''.join(before[a:b] for a, b in b_spans[i:j])
+        new_text = ''.join(after[a:b] for a, b in a_spans[k:l])
+        if cell(old) == cell(new_text):
+            continue
+        # この箇所にあった指摘のうち、修正後に消えたものを「対応した指摘」とする
+        start = b_spans[i][0] if i < j else None
+        end = b_spans[j - 1][1] if i < j else None
+        rules = sorted({f['rule'] for f in b_report['findings']
+                        if start is not None and start <= f['start'] < end and resolved[key(f)]})
+        rows.append((cell(old) or '（なし）', cell(new_text) or '（削除）', ', '.join(rules) or '—'))
+
+    engine = '形態素解析あり（MeCab）' if b_report['engine']['morphology'] else '軽量モード（形態素解析なし）'
+    lines = ['# 推敲の評価シート', '', '## 概要', '', '| 項目 | 値 |', '| --- | --- |',
+             f'| 文字数 | {len(before)} → {len(after)} |', f'| 変更した文 | {len(rows)} |',
+             f'| 指摘（修正前 → 修正後） | {sum(b_count.values())} → {sum(a_count.values())} |',
+             f'| 解消 | {sum(resolved.values())} |', f'| 残存 | {sum(remaining.values())} |',
+             f'| 新規 | {sum(new.values())} |', f'| 機械照合 | {STATUS_LABEL[check["status"]]} |',
+             f'| 診断エンジン | {engine} |', '', '## 変更箇所', '']
+    if rows:
+        lines += ['| # | 修正前 | 修正後 | 対応した指摘 |', '| --- | --- | --- | --- |']
+        lines += [f'| {n} | {old} | {new_text} | {rules} |' for n, (old, new_text, rules) in enumerate(rows, 1)]
+    else:
+        lines.append('変更はありません。')
+    for title, counter in (('解消した指摘', resolved), ('残った指摘', remaining), ('新たに出た指摘', new)):
+        lines += ['', f'## {title}', '']
+        lines += [f'- `{rule}` {cell(text)}' + (f'（{n}件）' if n > 1 else '')
+                  for (rule, text), n in sorted(counter.items())] or ['なし']
+    lines += ['', '## 機械照合', '']
+    labels = {'numbers_and_units': '数値・単位', 'protected_regions': '保護領域（コード・引用等）',
+              'ascii_terms': '英字の用語', 'named_terms': '固有名詞・指定語'}
+    for name, change in check['changes'].items():
+        removed = '、'.join(cell(w) for w in change['removed']) or 'なし'
+        added = '、'.join(cell(w) for w in change['added']) or 'なし'
+        lines.append(f'- {labels[name]}: 消えた {removed} ／ 増えた {added}')
+    for item in check['review']:
+        lines.append(f'- 要確認（{", ".join(item["categories"])}）: {cell(item["before"])} → {cell(item["after"])}')
+    if not check['changes'] and not check['review']:
+        lines.append('- 数値・固有名詞・否定や確度の表現に機械的な差異はありません。')
+    lines += ['', '機械照合は意味が同じであることを保証しません。主語と数値の対応や因果の変化は目で確認してください。']
+    return '\n'.join(lines) + '\n'
+
+
 def read(path):
     data = sys.stdin.buffer.read() if path == '-' else Path(path).read_bytes()
     text = data.decode('utf-8')
@@ -273,10 +348,10 @@ def read(path):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
-    for command in ('analyze', 'fix', 'verify'):
+    for command in ('analyze', 'fix', 'verify', 'report'):
         p = commands.add_parser(command)
         p.add_argument('input')
-        if command == 'verify':
+        if command in ('verify', 'report'):
             p.add_argument('candidate')
         if command == 'fix':
             p.add_argument('--output', required=True, help='新規ファイル。既存ファイルは上書きしない')
@@ -296,6 +371,12 @@ def main(argv=None):
                 raise ValueError('標準入力は片方の文書だけに使えます。')
             result = verify(text, read(args.candidate), analyzer, args.keep)
             code = 1 if result['changes'] else 3 if result['review'] else 0
+        elif args.command == 'report':
+            # 評価シートは人が読むものなので、JSONではなくMarkdownで出力する
+            if args.input == '-' and args.candidate == '-':
+                raise ValueError('標準入力は片方の文書だけに使えます。')
+            print(report(text, read(args.candidate), analyzer, args.keep), end='')
+            return 0
         else:
             candidate, result = fix(text, analyzer, args.keep)
             with open(args.output, 'xb') as output:

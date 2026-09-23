@@ -73,6 +73,50 @@ class RevisionTests(unittest.TestCase):
             self.assertEqual(code, 2)
             self.assertEqual(target.read_text(encoding='utf-8'), '元のファイル')
 
+    def test_report_shows_changed_sentence_and_resolved_finding(self):
+        before = 'まず最初に、確認します。\n履歴を見ます。'
+        after = 'まず、確認します。\n履歴を見ます。'
+        sheet = polish.report(before, after, self.analyzer)
+        self.assertIn('| 1 | まず最初に、確認します。 | まず、確認します。 | redundant-opening |', sheet)
+        self.assertNotIn('| 履歴を見ます。 |', sheet)
+        self.assertIn('| 解消 | 1 |', sheet)
+
+    def test_report_lists_adjacent_changed_sentences_separately(self):
+        before = 'まず最初に、確認します。\n履歴を確認することができます。'
+        after = 'まず、確認します。\n履歴を確認できます。'
+        sheet = polish.report(before, after, self.analyzer)
+        self.assertIn('| 1 | まず最初に、確認します。 | まず、確認します。 | redundant-opening |', sheet)
+        self.assertIn('| 2 | 履歴を確認することができます。 | 履歴を確認できます。 | roundabout-capability |', sheet)
+        self.assertIn('| 変更した文 | 2 |', sheet)
+
+    def test_report_separates_remaining_and_new_findings(self):
+        before = '圧倒的な効率化です。'
+        after = '圧倒的で画期的な効率化です。'
+        sheet = polish.report(before, after, self.analyzer)
+        self.assertIn('| 残存 | 1 |', sheet)
+        self.assertIn('| 新規 | 1 |', sheet)
+        self.assertIn('画期的', sheet.split('## 新たに出た指摘')[1])
+
+    def test_report_surfaces_protected_changes_and_review_items(self):
+        sheet = polish.report('2012年に開業しました。返金できます。', '2013年に開業しました。返金します。', self.analyzer)
+        self.assertIn('2012年', sheet.split('## 機械照合')[1])
+        self.assertIn('possibility', sheet.split('## 機械照合')[1])
+
+    def test_report_strips_html_tags_from_sentences(self):
+        sheet = polish.report('<p>まず最初に、確認します。</p>', '<p>まず、確認します。</p>', self.analyzer)
+        self.assertIn('| まず最初に、確認します。 | まず、確認します。 |', sheet)
+
+    def test_cli_report_prints_markdown_sheet(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source, target = Path(folder)/'in.md', Path(folder)/'out.md'
+            source.write_text('まず最初に、確認します。', encoding='utf-8')
+            target.write_text('まず、確認します。', encoding='utf-8')
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = polish.main(['report', str(source), str(target), '--lightweight'])
+            self.assertEqual(code, 0)
+            self.assertTrue(out.getvalue().startswith('# 推敲の評価シート'))
+
     @unittest.skipUnless(os.environ.get('POLISH_TEST_DIC'), 'set POLISH_TEST_DIC for MeCab integration')
     def test_real_dictionary_integration_and_source_offsets(self):
         analyzer = polish.Analyzer(os.environ['POLISH_TEST_DIC'], user_dic=os.environ.get('POLISH_TEST_USER_DIC'))

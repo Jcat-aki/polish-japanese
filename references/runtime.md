@@ -37,7 +37,7 @@ python3 SKILL_DIR/scripts/polish.py analyze draft.md --dic /path/to/unidic --use
 python3 SKILL_DIR/scripts/polish.py verify draft.md candidate.md --dic /path/to/unidic --user-dic /path/to/neologd.dic
 ```
 
-`--user-dic`は`analyze`・`fix`・`verify`のすべてで指定できる。各コマンドで同じ辞書を使う。読み込んだ辞書一覧と件数はJSONの`engine.dictionaries`に出す。軽量モードと追加辞書を同時に指定するとエラーになる。
+`--user-dic`は`analyze`・`fix`・`verify`・`report`のすべてで指定できる。各コマンドで同じ辞書を使う。読み込んだ辞書一覧と件数はJSONの`engine.dictionaries`に出す。軽量モードと追加辞書を同時に指定するとエラーになる。
 
 ## 辞書を自動で使うラッパー
 
@@ -64,6 +64,7 @@ exec "$PY" "$SCRIPT" "$@" --dic /path/to/unidic --user-dic /path/to/neologd.dic
 - `analyze`: 行・列・原文の文字オフセットと理由をJSONで返す。オフセットはUnicodeコードポイント単位。
 - `fix`: 文頭の「まず最初に」と、形態素条件を満たす「サ変名詞＋することができます」のみ短縮候補を保存する。他の表現はエージェントが判断する。原文と既存出力を上書きしない。
 - `verify`: 数字と一部の単位、ASCII用語、辞書が固有名詞とした語、指定語、保護領域の出現回数を照合する。否定・可能・義務などの表現差を確認対象として返す。
+- `report`: 修正前後を比べた評価シートをMarkdownで返す。概要（文字数・指摘件数・照合結果）、変更した文ごとの前後と対応した指摘、解消・残存・新規の指摘、機械照合の差異を含む。変更の対応づけは文単位で、文の分割・統合は一つの行にまとめて示す。
 - `--keep`: 原文のまま残す語句を繰り返し指定できる。
 - `--lightweight`: MeCab未使用と明示する。固有名詞の自動抽出と名詞構造の診断は省略する。
 
