@@ -95,13 +95,17 @@ class Analyzer:
         except ImportError as e:
             raise ValueError('mecab-python3 をインストールしてください。') from e
         options = f'-r "{os.devnull}" -d "{path}"'
-        if user_dic:
-            user_path = str(Path(user_dic).expanduser().resolve())
+        # 追加辞書は複数指定できる（MeCabにはカンマ区切りで渡す）
+        user_paths = []
+        for user in ([user_dic] if isinstance(user_dic, (str, os.PathLike)) else user_dic or []):
+            user_path = str(Path(user).expanduser().resolve())
             if not Path(user_path).is_file():
                 raise ValueError('指定した追加辞書ファイルがありません。')
             if any(c in user_path for c in ['"', "'", '\n', '\r', '\\', ',']):
                 raise ValueError('追加辞書パスに引用符・改行・バックスラッシュ・カンマは使えません。')
-            options += f' -u "{user_path}"'
+            user_paths.append(user_path)
+        if user_paths:
+            options += f' -u "{",".join(user_paths)}"'
         self.tagger = MeCab.Tagger(options)
         info = self.tagger.dictionary_info()
         if info is None or info.charset.lower().replace('-', '') != 'utf8':
@@ -407,6 +411,12 @@ def read(path):
     return text
 
 
+def read_keep_file(path):
+    """常に保護する語のリストを読む。1行1語、空行と#で始まる行は無視する。"""
+    lines = Path(path).expanduser().read_text(encoding='utf-8').splitlines()
+    return [s for s in (line.strip() for line in lines) if s and not s.startswith('#')]
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -420,10 +430,14 @@ def main(argv=None):
         mode = p.add_mutually_exclusive_group()
         mode.add_argument('--dic')
         mode.add_argument('--lightweight', action='store_true')
-        p.add_argument('--user-dic', help='UniDicに追加するビルド済みNEologdユーザー辞書')
+        p.add_argument('--user-dic', action='append', help='UniDicに追加するビルド済みユーザー辞書（NEologd等）。複数指定できる')
         p.add_argument('--keep', action='append', default=[])
+        p.add_argument('--keep-file', help='常に保護する語のリスト（1行1語）。環境変数 POLISH_KEEP_FILE でも指定できる')
     args = parser.parse_args(argv)
     try:
+        keep_file = args.keep_file or os.environ.get('POLISH_KEEP_FILE')
+        if keep_file:
+            args.keep += read_keep_file(keep_file)
         analyzer = Analyzer(args.dic or os.environ.get('NEOLOGD_DIC'), args.lightweight, args.user_dic)
         text, code = read(args.input), 0
         if args.command == 'analyze':
