@@ -149,6 +149,10 @@ UNSOURCED = re.compile(
     r'|(?:調査|研究|データ|統計)(?:によると|によれば|では)|と言われて(?:いる|います)|とされて(?:いる|います)|(?:という|との)声'
     r'|(?:お悩み|お困り)の方(?:も|は)(?:多い|少なくない)|(?:悩んで|困って|感じて)いる方(?:も|は)(?:多い|少なくない)'
     r'|ある(?:お客様|企業|会社|ユーザー|方)(?:から|が|は|に)')
+# 読み手を見くびる書き方：重要さを自分で宣言する前置きと、決まり文句の締め。
+# 「鍵」は実物の鍵と区別できないので含めない。「いかがでしょうか」単独は本当の問いかけがあるので含めない
+SELF_IMPORTANCE = re.compile(r'(?:ここで|最も|特に|一番)?(?:重要|大切|大事|肝心)な(?:の|こと|点)は|(?:本質|核心|ポイント|キモ)は')
+CLOSING_SUGGESTION = re.compile(r'てみては(?:いかが|どう)でしょうか|いかがでしたか')
 ABSTRACT = re.compile(r'最適化|効率化|高度化|知見|共有|活用|推進|強化|向上|実現|確保|促進|価値創出|課題解決|相乗効果|多角的|包括的')
 NUMBER = re.compile(r'[+\-−]?[0-9０-９]+(?:[,.．，][0-9０-９]+)*(?:[ \t]*(?:億円|万円|千円|円|ms|秒|分|時間|日|年|月|%|％|kg|GB|MB|人|件|回|倍|個|台))?(?:以上|以下|未満|以内|超|程度|前後)?')
 ASCII_TERM = re.compile(r'[A-Za-z][A-Za-z0-9]*(?:[_.+/#-][A-Za-z0-9]+)*')
@@ -241,6 +245,12 @@ def inspect(text, analyzer, keep=()):
         add('unsourced-claim', *m.span(),
             '原文に根拠のない一般化・伝聞・読み手の気持ちの推測・ぼかした体験談かもしれない。'
             '根拠や出典が本文にあれば残す。なければ削るか書き手に確認し、もっともらしく補わない。')
+    for m in SELF_IMPORTANCE.finditer(prose):
+        add('self-declared-importance', *m.span(),
+            '重要さを自分で宣言している。前置きを外し、何がなぜ大事かをそのまま書けば読み手は自分で判断できる。')
+    for m in CLOSING_SUGGESTION.finditer(prose):
+        add('closing-suggestion', *m.span(),
+            '読み手に行動を促す決まり文句。勧めたいなら何をなぜ勧めるかを言い切り、不要なら削る。')
     for m in re.finditer(r'革命的|圧倒的|驚異的|画期的|究極|無限の可能性|新たな地平', prose):
         add('inflated-language', *m.span(), '内容に見合う強さか確認する。裏づけがなければ普通の言葉へ戻す。')
     for m in re.finditer(r'まず最初に', prose):
@@ -281,7 +291,8 @@ def inspect(text, analyzer, keep=()):
             'limits': ['指摘は推敲の手掛かりでありAI生成確率ではない。', '意見や比喩の妥当性・文脈の意味はエージェントが確認する。'],
             'proper_noun_candidates': sorted(names), 'findings': sorted(findings, key=lambda f: (f['start'], f['rule'])),
             'protected_regions': protected,
-            'metrics': {'characters': len(text), 'tokens': len(tokens) if analyzer.tagger else None}}
+            'metrics': {'characters': len(text), 'tokens': len(tokens) if analyzer.tagger else None,
+                        'style': style_tendency(text)}}
 
 
 def delta(before, after):
@@ -333,6 +344,37 @@ STATUS_LABEL = {'no-mechanical-difference': '機械的な差異なし', 'needs-r
                 'changed-protected-content': '保護対象が変化（要修正）'}
 
 
+SHORT_SENTENCE = 20
+BULLET = re.compile(r'(?:[-*+]|\d+[.)])\s')
+
+
+def style_tendency(text):
+    """文書全体の書き方の傾向（短い文・一文ごとの改行・箇条書きの多さ）を数える。
+    良し悪しの線引きは未校正なので、判定はせず割合だけを返す。"""
+    fences = fenced_spans(text)
+    counted = bullets = prose_lines = one_sentence_lines = 0
+    sentences, offset = [], 0
+    for raw in text.splitlines(keepends=True):
+        start, offset = offset, offset + len(raw)
+        # コードブロック・見出し・表・空行は数えない。HTMLはタグを除いて本文だけを見る
+        line = re.sub(r'<[^>]*>', '', raw).strip()
+        if overlaps(start, offset, fences) or not line or line.startswith(('#', '|')):
+            continue
+        counted += 1
+        if BULLET.match(line):
+            bullets += 1
+            continue
+        found = [s.strip() for s in SENTENCE.findall(line) if s.strip()]
+        prose_lines += 1
+        one_sentence_lines += len(found) == 1
+        sentences += found
+    ratio = lambda part, whole: round(part / whole, 2) if whole else None
+    return {'sentences': len(sentences),
+            'short_sentence_ratio': ratio(sum(len(s) < SHORT_SENTENCE for s in sentences), len(sentences)),
+            'one_sentence_line_ratio': ratio(one_sentence_lines, prose_lines),
+            'bullet_line_ratio': ratio(bullets, counted)}
+
+
 def cell(text):
     # 表のセルに入れるため、HTMLタグ・改行・区切り文字を除く
     text = re.sub(r'<[^>]*>', '', text)
@@ -378,7 +420,16 @@ def report(before, after, analyzer, keep=()):
              f'| 指摘（修正前 → 修正後） | {sum(b_count.values())} → {sum(a_count.values())} |',
              f'| 解消 | {sum(resolved.values())} |', f'| 残存 | {sum(remaining.values())} |',
              f'| 新規 | {sum(new.values())} |', f'| 機械照合 | {STATUS_LABEL[check["status"]]} |',
-             f'| 診断エンジン | {engine} |', '', '## 変更箇所', '']
+             f'| 診断エンジン | {engine} |', '', '## 文書全体の傾向', '']
+    b_style, a_style = style_tendency(before), style_tendency(after)
+    pct = lambda v: '—' if v is None else f'{round(v * 100)}%'
+    lines += ['| 項目 | 修正前 | 修正後 |', '| --- | --- | --- |',
+              f'| 文の数 | {b_style["sentences"]} | {a_style["sentences"]} |']
+    for key, label in (('short_sentence_ratio', f'{SHORT_SENTENCE}文字未満の文の割合'),
+                       ('one_sentence_line_ratio', '一文だけの行の割合'), ('bullet_line_ratio', '箇条書きの行の割合')):
+        lines.append(f'| {label} | {pct(b_style[key])} | {pct(a_style[key])} |')
+    lines += ['', '文を細かく切る・一文ごとに改行する・箇条書きに崩す傾向の目安。線引きは未校正のため、良し悪しは判定しない。',
+              '', '## 変更箇所', '']
     if rows:
         lines += ['| # | 修正前 | 修正後 | 対応した指摘 |', '| --- | --- | --- | --- |']
         lines += [f'| {n} | {old} | {new_text} | {rules} |' for n, (old, new_text, rules) in enumerate(rows, 1)]

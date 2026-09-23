@@ -204,6 +204,60 @@ class RevisionTests(unittest.TestCase):
         self.assertEqual(result['status'], 'needs-review')
         self.assertIn('unsourced', result['review'][0]['categories'])
 
+    def test_self_declared_importance_is_flagged(self):
+        for source, expected in [('ここで重要なのは、配送時間です。', 'ここで重要なのは'),
+                                 ('大切なことは、続けることです。', '大切なことは'),
+                                 ('本質は顧客体験にあります。', '本質は'),
+                                 ('ポイントは3つあります。', 'ポイントは')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'self-declared-importance']
+                self.assertEqual(found, [expected])
+
+    def test_ordinary_use_of_important_words_is_not_flagged(self):
+        for source in ['重要な書類を送ります。', '品質が重要です。', '鍵は玄関の棚にあります。']:
+            with self.subTest(source=source):
+                rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+                self.assertNotIn('self-declared-importance', rules)
+
+    def test_stock_closing_suggestion_is_flagged(self):
+        for source, expected in [('ぜひ使ってみてはいかがでしょうか。', 'てみてはいかがでしょうか'),
+                                 ('いかがでしたか？', 'いかがでしたか')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'closing-suggestion']
+                self.assertEqual(found, [expected])
+
+    def test_genuine_question_is_not_a_closing_suggestion(self):
+        rules = [f['rule'] for f in polish.inspect('来週のご都合はいかがでしょうか。', self.analyzer)['findings']]
+        self.assertNotIn('closing-suggestion', rules)
+
+    def test_style_tendency_measures_short_sentences_line_breaks_and_bullets(self):
+        text = ('# 見出し\n'
+                '一つ目です。\n'
+                '短い。\n'
+                '- 項目\n'
+                '- 項目\n'
+                '\n'
+                '長い説明の文で、理由と条件をつなげて書いています。次の文です。\n'
+                '```\nコードの行\n```\n')
+        style = polish.style_tendency(text)
+        self.assertEqual(style['sentences'], 4)
+        self.assertEqual(style['short_sentence_ratio'], 0.75)
+        self.assertEqual(style['one_sentence_line_ratio'], round(2 / 3, 2))
+        self.assertEqual(style['bullet_line_ratio'], 0.4)
+
+    def test_style_tendency_of_empty_text_has_no_ratios(self):
+        style = polish.style_tendency('')
+        self.assertEqual(style['sentences'], 0)
+        self.assertIsNone(style['short_sentence_ratio'])
+
+    def test_report_shows_style_tendency_before_and_after(self):
+        before = '短い。\n短い文。\n短いです。\n'
+        after = '短く切らずに、理由と条件をつなげて一続きの文で書き直しました。\n'
+        sheet = polish.report(before, after, self.analyzer)
+        tendency = sheet.split('## 文書全体の傾向')[1]
+        self.assertIn('| 20文字未満の文の割合 | 100% | 0% |', tendency)
+        self.assertIn('| 一文だけの行の割合 | 100% | 100% |', tendency)
+
     @unittest.skipUnless(os.environ.get('POLISH_TEST_DIC'), 'set POLISH_TEST_DIC for MeCab integration')
     def test_real_dictionary_integration_and_source_offsets(self):
         analyzer = polish.Analyzer(os.environ['POLISH_TEST_DIC'], user_dic=os.environ.get('POLISH_TEST_USER_DIC'))
