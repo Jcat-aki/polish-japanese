@@ -149,6 +149,115 @@ class RevisionTests(unittest.TestCase):
                 code = polish.main(['analyze', str(source), '--lightweight', '--keep-file', str(Path(folder)/'none.txt')])
             self.assertEqual(code, 2)
 
+    def test_undefined_internal_name_is_flagged_at_first_use_only(self):
+        source = 'keep.dic を作り直します。keep.dic は小さいです。'
+        found = [f for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'undefined-term']
+        self.assertEqual([(f['text'], f['start']) for f in found], [('keep.dic', 0)])
+
+    def test_internal_name_kinds_are_flagged(self):
+        for name in ['artifact_gate', 'verifyAndStamp', '~/.claude/settings.json', 'PR #4', '--keep-file', '`stamp`']:
+            with self.subTest(name=name):
+                found = [f['text'] for f in polish.inspect(f'{name}で確認します。', self.analyzer)['findings']
+                         if f['rule'] == 'undefined-term']
+                self.assertEqual(found, [name.strip('`')])
+
+    def test_term_explained_at_first_use_is_not_flagged(self):
+        for source in ['小さな辞書（keep.dic）を作ります。', 'keep.dic（小さな辞書）を作ります。',
+                       'keep.dicとは小さな辞書です。', 'keep.dic という小さな辞書を作ります。']:
+            with self.subTest(source=source):
+                rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+                self.assertNotIn('undefined-term', rules)
+
+    def test_terms_the_reader_knows_are_not_flagged(self):
+        source = 'AIとAPIとURLを使い、CBcloudの画面を開きます。'
+        rules = [f['rule'] for f in polish.inspect(source, self.analyzer, ['CBcloud'])['findings']]
+        self.assertNotIn('undefined-term', rules)
+
+    def test_names_quoted_as_examples_are_not_flagged(self):
+        source = '「keep.dic を作り直します」のような書き方は避けます。'
+        rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+        self.assertNotIn('undefined-term', rules)
+
+    def test_names_in_code_blocks_and_links_are_not_flagged(self):
+        source = '```\nartifact_gate\n```\n[設定](https://example.test/a_b.json)を見ます。'
+        rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+        self.assertNotIn('undefined-term', rules)
+
+    def test_unsourced_generalization_hearsay_and_mind_reading_are_flagged(self):
+        for source, expected in [('多くの企業が導入しています。', '多くの企業'),
+                                 ('調査によると満足度は高いです。', '調査によると'),
+                                 ('一般的に、配送は遅れがちです。', '一般的に'),
+                                 ('配送でお悩みの方も多いのではないでしょうか。', 'お悩みの方も多い'),
+                                 ('先日、あるお客様から感謝されました。', 'あるお客様から')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'unsourced-claim']
+                self.assertIn(expected, found)
+
+    def test_plain_statement_is_not_flagged_as_unsourced(self):
+        for source in ['当社は2018年から配送を手がけています。', '「一般的に」という言葉は避けます。']:
+            with self.subTest(source=source):
+                rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+                self.assertNotIn('unsourced-claim', rules)
+
+    def test_premise_added_in_revision_needs_review(self):
+        result = polish.verify('配送を自動化します。', '多くの企業が悩む配送を自動化します。', self.analyzer)
+        self.assertEqual(result['status'], 'needs-review')
+        self.assertIn('unsourced', result['review'][0]['categories'])
+
+    def test_self_declared_importance_is_flagged(self):
+        for source, expected in [('ここで重要なのは、配送時間です。', 'ここで重要なのは'),
+                                 ('大切なことは、続けることです。', '大切なことは'),
+                                 ('本質は顧客体験にあります。', '本質は'),
+                                 ('ポイントは3つあります。', 'ポイントは')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'self-declared-importance']
+                self.assertEqual(found, [expected])
+
+    def test_ordinary_use_of_important_words_is_not_flagged(self):
+        for source in ['重要な書類を送ります。', '品質が重要です。', '鍵は玄関の棚にあります。']:
+            with self.subTest(source=source):
+                rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+                self.assertNotIn('self-declared-importance', rules)
+
+    def test_stock_closing_suggestion_is_flagged(self):
+        for source, expected in [('ぜひ使ってみてはいかがでしょうか。', 'てみてはいかがでしょうか'),
+                                 ('いかがでしたか？', 'いかがでしたか')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'closing-suggestion']
+                self.assertEqual(found, [expected])
+
+    def test_genuine_question_is_not_a_closing_suggestion(self):
+        rules = [f['rule'] for f in polish.inspect('来週のご都合はいかがでしょうか。', self.analyzer)['findings']]
+        self.assertNotIn('closing-suggestion', rules)
+
+    def test_style_tendency_measures_short_sentences_line_breaks_and_bullets(self):
+        text = ('# 見出し\n'
+                '一つ目です。\n'
+                '短い。\n'
+                '- 項目\n'
+                '- 項目\n'
+                '\n'
+                '長い説明の文で、理由と条件をつなげて書いています。次の文です。\n'
+                '```\nコードの行\n```\n')
+        style = polish.style_tendency(text)
+        self.assertEqual(style['sentences'], 4)
+        self.assertEqual(style['short_sentence_ratio'], 0.75)
+        self.assertEqual(style['one_sentence_line_ratio'], round(2 / 3, 2))
+        self.assertEqual(style['bullet_line_ratio'], 0.4)
+
+    def test_style_tendency_of_empty_text_has_no_ratios(self):
+        style = polish.style_tendency('')
+        self.assertEqual(style['sentences'], 0)
+        self.assertIsNone(style['short_sentence_ratio'])
+
+    def test_report_shows_style_tendency_before_and_after(self):
+        before = '短い。\n短い文。\n短いです。\n'
+        after = '短く切らずに、理由と条件をつなげて一続きの文で書き直しました。\n'
+        sheet = polish.report(before, after, self.analyzer)
+        tendency = sheet.split('## 文書全体の傾向')[1]
+        self.assertIn('| 20文字未満の文の割合 | 100% | 0% |', tendency)
+        self.assertIn('| 一文だけの行の割合 | 100% | 100% |', tendency)
+
     @unittest.skipUnless(os.environ.get('POLISH_TEST_DIC'), 'set POLISH_TEST_DIC for MeCab integration')
     def test_real_dictionary_integration_and_source_offsets(self):
         analyzer = polish.Analyzer(os.environ['POLISH_TEST_DIC'], user_dic=os.environ.get('POLISH_TEST_USER_DIC'))
