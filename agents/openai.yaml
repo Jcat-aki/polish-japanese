@@ -1,0 +1,13 @@
+interface:
+  display_name: 日本語をさっと自然に
+  short_description: 抽象的で仰々しい日本語を、一度の言い換えで人と調整できる叩き台にする
+  default_prompt: $polish-japanese を使って、この文章をさっと自然にしてください。主張の方向性は案を見てから調整します。
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true
