@@ -151,6 +151,51 @@ MODALITY = {
 }
 
 
+# 書き手の作業文脈でしか通じない内部の呼び名（ファイル名・パス・識別子・オプション・PR番号・インラインコード）。
+# 日本語を語の一部と見なさないよう ASCII モードで照合する
+INTERNAL_NAME = re.compile(r'''
+    `(?P<code>[^`\n]+)`                                   # インラインコード
+  | ~/[\w./-]+                                            # ホーム以下のパス
+  | (?:\.{1,2}/)?[\w-]+(?:/[\w.-]+)+\.\w+                  # 相対パス
+  | [\w-]+(?:\.[\w-]+)*\.(?:md|txt|py|sh|json|dic|html?|csv|ya?ml|js|ts|rb|toml|lock|log)\b  # ファイル名
+  | (?:\b(?:PR|Issue|issue)\s?)?\#\d+\b                    # PR・Issue番号
+  | (?<![\w-])--[a-z][a-z0-9-]*                          # コマンドのオプション
+  | \b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b                     # snake_case
+  | \b[a-z]+(?:[A-Z][a-z0-9]*)+\b                         # camelCase
+''', re.ASCII | re.VERBOSE)
+# リンク・URLと、「」『』で引いた例文は、書き手自身の呼び名ではないので対象外にする
+LINKS_AND_QUOTES = re.compile(r'!?\[[^\]\n]*\]\([^)\n]*\)|https?://[^\s<>「」『』。]+|「[^「」]*」|『[^『』]*』')
+# 初出の直前・直後がこれなら、読み手向けの説明があると見なす
+EXPLAINED_BEFORE = ('（', '(')
+EXPLAINED_AFTER = ('（', '(', 'とは', 'という', 'って', '：', ':')
+
+
+def fenced_spans(text):
+    return [(a, b) for a, b in protected_spans(text)
+            if re.match(r' {0,3}(`{3,}|~{3,})', text[a:b])]
+
+
+def undefined_terms(text, keep=()):
+    """説明なしで使われている内部の呼び名の初出を返す。読み手が知っている語（keep）は除く。"""
+    skip = fenced_spans(text) + [m.span() for m in LINKS_AND_QUOTES.finditer(text)]
+    seen, result, taken = set(), [], []
+    for m in INTERNAL_NAME.finditer(text):
+        start, end = m.span('code') if m.group('code') else m.span()
+        term = text[start:end]
+        if overlaps(*m.span(), skip) or overlaps(start, end, taken) or term in keep:
+            continue
+        taken.append((start, end))
+        if term in seen:
+            continue
+        seen.add(term)
+        before = text[:m.start()].rstrip(' `')
+        after = text[m.end():].lstrip(' `')
+        if before.endswith(EXPLAINED_BEFORE) or after.startswith(EXPLAINED_AFTER):
+            continue
+        result.append((start, end))
+    return result
+
+
 def proper_terms(tokens):
     return {t.surface for t in tokens if t.pos[:2] == ('名詞', '固有名詞')}
 
@@ -167,14 +212,18 @@ def inspect(text, analyzer, keep=()):
     guarded = protected + term_spans(text, names)
     findings = []
 
-    def add(rule, start, end, reason, replacement=None):
-        if overlaps(start, end, guarded):
+    def add(rule, start, end, reason, replacement=None, guard=True):
+        if guard and overlaps(start, end, guarded):
             return
         findings.append({'rule': rule, 'start': start, 'end': end,
                          'line': text.count('\n', 0, start) + 1,
                          'column': start - text.rfind('\n', 0, start),
                          'text': text[start:end], 'reason': reason, 'replacement': replacement})
 
+    # 内部の呼び名はインラインコードの中も見るため、保護領域による除外（guard）をしない
+    for start, end in undefined_terms(text, keep):
+        add('undefined-term', start, end,
+            '読み手が知らない内部の呼び名かもしれない。初出で何を指すか説明するか、一般的な言葉に置き換える。', guard=False)
     for m in re.finditer(r'革命的|圧倒的|驚異的|画期的|究極|無限の可能性|新たな地平', prose):
         add('inflated-language', *m.span(), '内容に見合う強さか確認する。裏づけがなければ普通の言葉へ戻す。')
     for m in re.finditer(r'まず最初に', prose):

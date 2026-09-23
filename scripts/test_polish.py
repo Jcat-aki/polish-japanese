@@ -117,6 +117,40 @@ class RevisionTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertTrue(out.getvalue().startswith('# 推敲の評価シート'))
 
+    def test_undefined_internal_name_is_flagged_at_first_use_only(self):
+        source = 'keep.dic を作り直します。keep.dic は小さいです。'
+        found = [f for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'undefined-term']
+        self.assertEqual([(f['text'], f['start']) for f in found], [('keep.dic', 0)])
+
+    def test_internal_name_kinds_are_flagged(self):
+        for name in ['artifact_gate', 'verifyAndStamp', '~/.claude/settings.json', 'PR #4', '--keep-file', '`stamp`']:
+            with self.subTest(name=name):
+                found = [f['text'] for f in polish.inspect(f'{name}で確認します。', self.analyzer)['findings']
+                         if f['rule'] == 'undefined-term']
+                self.assertEqual(found, [name.strip('`')])
+
+    def test_term_explained_at_first_use_is_not_flagged(self):
+        for source in ['小さな辞書（keep.dic）を作ります。', 'keep.dic（小さな辞書）を作ります。',
+                       'keep.dicとは小さな辞書です。', 'keep.dic という小さな辞書を作ります。']:
+            with self.subTest(source=source):
+                rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+                self.assertNotIn('undefined-term', rules)
+
+    def test_terms_the_reader_knows_are_not_flagged(self):
+        source = 'AIとAPIとURLを使い、CBcloudの画面を開きます。'
+        rules = [f['rule'] for f in polish.inspect(source, self.analyzer, ['CBcloud'])['findings']]
+        self.assertNotIn('undefined-term', rules)
+
+    def test_names_quoted_as_examples_are_not_flagged(self):
+        source = '「keep.dic を作り直します」のような書き方は避けます。'
+        rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+        self.assertNotIn('undefined-term', rules)
+
+    def test_names_in_code_blocks_and_links_are_not_flagged(self):
+        source = '```\nartifact_gate\n```\n[設定](https://example.test/a_b.json)を見ます。'
+        rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+        self.assertNotIn('undefined-term', rules)
+
     @unittest.skipUnless(os.environ.get('POLISH_TEST_DIC'), 'set POLISH_TEST_DIC for MeCab integration')
     def test_real_dictionary_integration_and_source_offsets(self):
         analyzer = polish.Analyzer(os.environ['POLISH_TEST_DIC'], user_dic=os.environ.get('POLISH_TEST_USER_DIC'))
