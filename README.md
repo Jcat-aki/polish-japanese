@@ -62,11 +62,11 @@ git clone git@github.com:Jcat-aki/polish-japanese.git ~/workspace/polish-japanes
 /polish-japanese この文章をさっと自然にして
 ```
 
-文章を平易にしたい、AI っぽさを消したい、といった依頼では、スキル名を書かなくても自動で使われることがあります。エージェントは診断 → 一回の言い換え → 数値等の照合を行い、叩き台を返します。
+文章を平易にしたい、AI っぽさを消したい、といった依頼では、スキル名を書かなくても自動で使われることがあります。エージェントは診断 → 一回の言い換え → 数値等の照合を行い、叩き台と評価シートを返します。
 
 ### CLI として
 
-すべてのコマンドは JSON を標準出力に返します。入力に `-` を渡すと標準入力から読みます。
+`report` 以外のコマンドは JSON を標準出力に返します。入力に `-` を渡すと標準入力から読みます。
 
 ```bash
 # 診断（行・列・文字オフセットと理由を返す）
@@ -77,6 +77,9 @@ polish-japanese fix draft.md --output candidate.md
 
 # 修正前後の照合。推敲しても変えてはいけない語は --keep で指定する
 polish-japanese verify draft.md candidate.md --keep '製品の正式名称'
+
+# 何がどう変わったかの評価シート（Markdown）
+polish-japanese report draft.md candidate.md
 
 # 辞書なし（軽量モード）
 python3 scripts/polish.py analyze draft.md --lightweight
