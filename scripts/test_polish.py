@@ -183,6 +183,27 @@ class RevisionTests(unittest.TestCase):
         rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
         self.assertNotIn('undefined-term', rules)
 
+    def test_unsourced_generalization_hearsay_and_mind_reading_are_flagged(self):
+        for source, expected in [('多くの企業が導入しています。', '多くの企業'),
+                                 ('調査によると満足度は高いです。', '調査によると'),
+                                 ('一般的に、配送は遅れがちです。', '一般的に'),
+                                 ('配送でお悩みの方も多いのではないでしょうか。', 'お悩みの方も多い'),
+                                 ('先日、あるお客様から感謝されました。', 'あるお客様から')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'unsourced-claim']
+                self.assertIn(expected, found)
+
+    def test_plain_statement_is_not_flagged_as_unsourced(self):
+        for source in ['当社は2018年から配送を手がけています。', '「一般的に」という言葉は避けます。']:
+            with self.subTest(source=source):
+                rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+                self.assertNotIn('unsourced-claim', rules)
+
+    def test_premise_added_in_revision_needs_review(self):
+        result = polish.verify('配送を自動化します。', '多くの企業が悩む配送を自動化します。', self.analyzer)
+        self.assertEqual(result['status'], 'needs-review')
+        self.assertIn('unsourced', result['review'][0]['categories'])
+
     @unittest.skipUnless(os.environ.get('POLISH_TEST_DIC'), 'set POLISH_TEST_DIC for MeCab integration')
     def test_real_dictionary_integration_and_source_offsets(self):
         analyzer = polish.Analyzer(os.environ['POLISH_TEST_DIC'], user_dic=os.environ.get('POLISH_TEST_USER_DIC'))
