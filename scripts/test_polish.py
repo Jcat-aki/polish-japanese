@@ -172,6 +172,32 @@ class RevisionTests(unittest.TestCase):
         self.assertEqual(result['status'], 'needs-review')
         self.assertIn('unsourced', result['review'][0]['categories'])
 
+    def test_self_declared_importance_is_flagged(self):
+        for source, expected in [('ここで重要なのは、配送時間です。', 'ここで重要なのは'),
+                                 ('大切なことは、続けることです。', '大切なことは'),
+                                 ('本質は顧客体験にあります。', '本質は'),
+                                 ('ポイントは3つあります。', 'ポイントは')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'self-declared-importance']
+                self.assertEqual(found, [expected])
+
+    def test_ordinary_use_of_important_words_is_not_flagged(self):
+        for source in ['重要な書類を送ります。', '品質が重要です。', '鍵は玄関の棚にあります。']:
+            with self.subTest(source=source):
+                rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+                self.assertNotIn('self-declared-importance', rules)
+
+    def test_stock_closing_suggestion_is_flagged(self):
+        for source, expected in [('ぜひ使ってみてはいかがでしょうか。', 'てみてはいかがでしょうか'),
+                                 ('いかがでしたか？', 'いかがでしたか')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'closing-suggestion']
+                self.assertEqual(found, [expected])
+
+    def test_genuine_question_is_not_a_closing_suggestion(self):
+        rules = [f['rule'] for f in polish.inspect('来週のご都合はいかがでしょうか。', self.analyzer)['findings']]
+        self.assertNotIn('closing-suggestion', rules)
+
     @unittest.skipUnless(os.environ.get('POLISH_TEST_DIC'), 'set POLISH_TEST_DIC for MeCab integration')
     def test_real_dictionary_integration_and_source_offsets(self):
         analyzer = polish.Analyzer(os.environ['POLISH_TEST_DIC'], user_dic=os.environ.get('POLISH_TEST_USER_DIC'))
