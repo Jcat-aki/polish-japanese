@@ -37,7 +37,7 @@ python3 SKILL_DIR/scripts/polish.py analyze draft.md --dic /path/to/unidic --use
 python3 SKILL_DIR/scripts/polish.py verify draft.md candidate.md --dic /path/to/unidic --user-dic /path/to/neologd.dic
 ```
 
-`--user-dic`は`analyze`・`fix`・`verify`・`report`のすべてで指定できる。各コマンドで同じ辞書を使う。読み込んだ辞書一覧と件数はJSONの`engine.dictionaries`に出す。軽量モードと追加辞書を同時に指定するとエラーになる。
+`--user-dic`は`analyze`・`fix`・`verify`・`report`のすべてで指定でき、複数回指定すると順に読み込む（MeCabにはカンマ区切りで渡す）。各コマンドで同じ辞書を使う。読み込んだ辞書一覧と件数はJSONの`engine.dictionaries`に出す。軽量モードと追加辞書を同時に指定するとエラーになる。
 
 ## 辞書を自動で使うラッパー
 
@@ -66,6 +66,7 @@ exec "$PY" "$SCRIPT" "$@" --dic /path/to/unidic --user-dic /path/to/neologd.dic
 - `verify`: 数字と一部の単位、ASCII用語、辞書が固有名詞とした語、指定語、保護領域の出現回数を照合する。否定・可能・義務などの表現差を確認対象として返す。
 - `report`: 修正前後を比べた評価シートをMarkdownで返す。概要（文字数・指摘件数・照合結果）、変更した文ごとの前後と対応した指摘、解消・残存・新規の指摘、機械照合の差異を含む。変更の対応づけは文単位で、文の分割・統合は一つの行にまとめて示す。
 - `--keep`: 原文のまま残す語句を繰り返し指定できる。
+- `scripts/userdic.py <keep.txt> <出力.dic> [--dic <UniDic>]`: keep.txtの語を「名詞-固有名詞-一般」（文脈ID 4786、コスト-5000）としてユーザー辞書にする。空白・カンマ・引用符を含む語は除く。登録語がなければ出力を作らず、既存の出力は消す。コンパイルにはmecab-python3同梱の`mecab_dict_index`を使う。
 - `--keep-file`: 常に保護する語のリストを読む。1行1語で、空行と`#`で始まる行は無視する。環境変数`POLISH_KEEP_FILE`でも指定でき、`--keep`と併用できる。ファイルがなければエラーにする。
 - `--lightweight`: MeCab未使用と明示する。固有名詞の自動抽出と名詞構造の診断は省略する。
 

@@ -100,19 +100,30 @@ cat > "$BIN/polish-japanese" <<EOF
 #!/bin/bash
 # polish-japanese のラッパー（scripts/install.sh が生成）。辞書を自動で指定して polish.py を実行する。
 # --lightweight / --dic / --user-dic が明示されたときは、その指定を優先して辞書を足さない。
-# ~/.config/polish-japanese/keep.txt があれば、常に保護する語のリストとして渡す。
+# ~/.config/polish-japanese/keep.txt があれば、常に保護する語のリストとして渡し、
+# その語を1語の固有名詞として解析させるユーザー辞書（keep.dic）も読み込む。
 set -euo pipefail
-KEEP_FILE="\${POLISH_KEEP_FILE:-\$HOME/.config/polish-japanese/keep.txt}"
-if [ -f "\$KEEP_FILE" ]; then export POLISH_KEEP_FILE="\$KEEP_FILE"; fi
 PY="$PY"
 SCRIPT="$REPO/scripts/polish.py"
+KEEP_FILE="\${POLISH_KEEP_FILE:-\$HOME/.config/polish-japanese/keep.txt}"
+KEEP_DIC="$BASE/dic/keep.dic"
+EXTRA=()
+if [ -f "\$KEEP_FILE" ]; then
+  export POLISH_KEEP_FILE="\$KEEP_FILE"
+  # keep.txt が辞書より新しければ作り直す（数秒）
+  if [ ! -f "\$KEEP_DIC" ] || [ "\$KEEP_FILE" -nt "\$KEEP_DIC" ]; then
+    "\$PY" "$REPO/scripts/userdic.py" "\$KEEP_FILE" "\$KEEP_DIC" --dic "$SYS_DIC" >/dev/null 2>&1 \\
+      || echo "警告: keep.txt からユーザー辞書を作れませんでした。語の保護（--keep）は有効です。" >&2
+  fi
+  if [ -f "\$KEEP_DIC" ]; then EXTRA=(--user-dic "\$KEEP_DIC"); fi
+fi
 for arg in "\$@"; do
   case "\$arg" in
     --lightweight|--dic|--dic=*|--user-dic|--user-dic=*) exec "\$PY" "\$SCRIPT" "\$@" ;;
   esac
 done
 if [ \$# -eq 0 ] || [[ "\$1" == -* ]]; then exec "\$PY" "\$SCRIPT" "\$@"; fi
-exec "\$PY" "\$SCRIPT" "\$@" --dic "$SYS_DIC" --user-dic "$BASE/dic/neologd.dic"
+exec "\$PY" "\$SCRIPT" "\$@" --dic "$SYS_DIC" --user-dic "$BASE/dic/neologd.dic" \${EXTRA[@]+"\${EXTRA[@]}"}
 EOF
 chmod +x "$BIN/polish-japanese"
 echo "OK: $BIN/polish-japanese"
