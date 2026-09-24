@@ -184,6 +184,8 @@ SELF_IMPORTANCE = re.compile(r'(?:ここで|最も|特に|一番)?(?:重要|大�
 CLOSING_SUGGESTION = re.compile(r'てみては(?:いかが|どう)でしょうか|いかがでしたか')
 # 程度を強める語。同じ文に数字がなければ、どのくらいかは書き手しか知らない
 VAGUE_DEGREE = re.compile(r'非常に|とても|大幅に|劇的に|格段に|著しく|かなり|大きく')
+# 伝聞の形。言った人や発言の引用が同じ文にあれば、根拠のない前提として扱わない
+HEARSAY = re.compile(r'と言われ|とされ|(?:として|と)語られ')
 ABSTRACT = re.compile(r'最適化|効率化|高度化|知見|共有|活用|推進|強化|向上|実現|確保|促進|価値創出|課題解決|相乗効果|多角的|包括的')
 NUMBER = re.compile(r'[+\-−]?[0-9０-９]+(?:[,.．，][0-9０-９]+)*(?:[ \t]*(?:億円|万円|千円|円|ms|秒|分|時間|日|年|月|%|％|kg|GB|MB|人|件|回|倍|個|台))?(?:以上|以下|未満|以内|超|程度|前後)?')
 ASCII_TERM = re.compile(r'[A-Za-z][A-Za-z0-9]*(?:[_.+/#-][A-Za-z0-9]+)*')
@@ -290,6 +292,11 @@ def inspect(text, analyzer, keep=()):
         add('undefined-term', start, end,
             '読み手が知らない内部の呼び名かもしれない。初出で何を指すか説明するか、一般的な言葉に置き換える。', guard=False)
     for m in UNSOURCED.finditer(prose):
+        if HEARSAY.match(m[0]):
+            # 言った人が書かれている（「上司から」）、または発言そのものを引いている（「…」と言われる）なら、隠した言い方ではない
+            before = text[max(text.rfind('。', 0, m.start()), text.rfind('\n', 0, m.start())) + 1:m.start()]
+            if before.rstrip().endswith('」') or 'から' in before:
+                continue
         add('unsourced-claim', *m.span(),
             '原文に根拠のない一般化・伝聞・読み手の気持ちの推測・ぼかした体験談かもしれない。'
             '根拠や出典が本文にあれば残す。なければ削るか書き手に確認し、もっともらしく補わない。')
