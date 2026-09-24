@@ -493,6 +493,21 @@ class RevisionTests(unittest.TestCase):
                 rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
                 self.assertNotIn('era-opener', rules)
 
+    def test_importance_declared_with_ga_or_past_tense_is_flagged(self):
+        for source, expected in [('そこで重要だったのが、仕組みの整備でした。', '重要だったのが'),
+                                 ('ここで大切になるのは、順番です。', '大切になるのは'),
+                                 ('重要なのが、現場の声です。', '重要なのが'),
+                                 ('成否の鍵を握るのは現場です。', '鍵を握るのは')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'self-declared-importance']
+                self.assertEqual(found, [expected])
+
+    def test_important_as_a_plain_attribute_is_not_a_declaration(self):
+        for source in ['重要だった書類を保管する。', '鍵を握ったまま外出した。']:
+            with self.subTest(source=source):
+                rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+                self.assertNotIn('self-declared-importance', rules)
+
     def test_ordinary_use_of_important_words_is_not_flagged(self):
         for source in ['重要な書類を送ります。', '品質が重要です。', '鍵は玄関の棚にあります。']:
             with self.subTest(source=source):
