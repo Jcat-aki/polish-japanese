@@ -125,6 +125,30 @@ class RevisionTests(unittest.TestCase):
             with self.subTest(after=after):
                 self.assertIn('numbers_and_units', polish.verify(before, after, self.analyzer)['changes'])
 
+    def test_condense_allows_dropping_repeated_mentions(self):
+        before = '#11 の上に積んだ。#11 を先にマージする。AIが書き、AIが直した。'
+        after = '#11 の上に積んだので、先にマージする。AIが書き、直した。'
+        self.assertTrue(polish.verify(before, after, self.analyzer)['changes'])
+        self.assertEqual(polish.verify(before, after, self.analyzer, condense=True)['changes'], {})
+
+    def test_condense_reports_dropped_terms_without_stopping(self):
+        result = polish.verify('30日以内に返金します。', '期限内に返金します。', self.analyzer, condense=True)
+        self.assertEqual(result['changes'], {})
+        self.assertEqual(result['dropped']['numbers_and_units'], {'30日以内': 1})
+
+    def test_condense_still_stops_on_added_terms(self):
+        result = polish.verify('速く処理します。', '10msで処理します。', self.analyzer, condense=True)
+        self.assertEqual(result['changes']['numbers_and_units']['added'], {'10ms': 1})
+
+    def test_cli_verify_accepts_condense(self):
+        with tempfile.TemporaryDirectory() as folder:
+            before, after = Path(folder)/'a.md', Path(folder)/'b.md'
+            before.write_text('30日と30日です。', encoding='utf-8')
+            after.write_text('30日です。', encoding='utf-8')
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = polish.main(['verify', str(before), str(after), '--lightweight', '--condense'])
+            self.assertEqual(code, 0)
+
     def test_flags_new_factual_number(self):
         result = polish.verify('速く処理します。', '10msで処理します。', self.analyzer)
         self.assertTrue(result['changes'])
