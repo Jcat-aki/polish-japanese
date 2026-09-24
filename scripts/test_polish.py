@@ -224,6 +224,23 @@ class RevisionTests(unittest.TestCase):
                 found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'unsourced-claim']
                 self.assertIn(expected, found)
 
+    def test_statement_hiding_who_says_it_is_flagged(self):
+        for source, expected in [('バックログは開発の中心的な存在として語られます。', 'として語られます'),
+                                 ('朝型の生活が良いと言われます。', 'と言われます'),
+                                 ('この手法が標準とされます。', 'とされます'),
+                                 ('原因は人手不足だと考えられています。', 'と考えられています'),
+                                 ('エンジニアにも顧客理解が求められています。', 'が求められています'),
+                                 ('生成AIの活用が注目されています。', '注目されています')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'unsourced-claim']
+                self.assertEqual(found, [expected])
+
+    def test_writers_own_inference_and_plain_verbs_are_not_hidden_subjects(self):
+        for source in ['原因は人手不足だと考えられます。', '当日は事例について語ります。', '顧客から期限の短縮を求められました。']:
+            with self.subTest(source=source):
+                rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+                self.assertNotIn('unsourced-claim', rules)
+
     def test_plain_statement_is_not_flagged_as_unsourced(self):
         for source in ['当社は2018年から配送を手がけています。', '「一般的に」という言葉は避けます。']:
             with self.subTest(source=source):
