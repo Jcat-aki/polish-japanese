@@ -278,7 +278,8 @@ def named_counts(text, tokens, keep):
     """固有名詞は辞書が固有名詞と判定した位置だけを数え、keepの語は文字列として数える。
     （「としての」の「して」のように、別の位置で固有名詞と判定された文字列を全出現で数えないため）"""
     keep = set(keep)
-    counts = Counter(t.surface for t in tokens if is_proper(t) and t.surface not in keep)
+    # 英字の語は ascii_terms で語ごとに照合するので、辞書が切った断片（「st」「op」など）はここで数えない
+    counts = Counter(t.surface for t in tokens if is_proper(t) and t.surface not in keep and not t.surface.isascii())
     counts.update({w: text.count(w) for w in keep if w})
     return counts
 
