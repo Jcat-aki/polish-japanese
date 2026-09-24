@@ -81,6 +81,9 @@ polish-japanese fix draft.md --output candidate.md
 # 修正前後の照合。推敲しても変えてはいけない語は --keep で指定する
 polish-japanese verify draft.md candidate.md --keep '製品の正式名称'
 
+# 要約・圧縮して短くしたときの照合。消えた語は知らせるだけで止めず、新しく現れた語や数値だけを止める
+polish-japanese verify draft.md summary.md --condense
+
 # 何がどう変わったかの評価シート（Markdown）
 polish-japanese report draft.md candidate.md
 
