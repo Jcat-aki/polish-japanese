@@ -190,7 +190,10 @@ CLOSING_SUGGESTION = re.compile(r'てみては(?:いかが|どう)でしょう�
 VAGUE_DEGREE = re.compile(r'非常に|とても|大幅に|劇的に|格段に|著しく|かなり|大きく')
 # 文の型（stop-ai-slop-jp の観点を参考に独自に定義）。
 # 「AではなくB」は名詞を選ぶだけの普通の用法（「雨ではなく晴れ」）が多いので、節をつなぐ形と「単なる／であって」の形だけを見る
-BINARY_CONTRAST = re.compile(r'(?:単なる|ただの)[^。、]{0,20}?ではなく、?|[^。、「」は]{1,20}?であって[^。、]{1,10}?ではない|ではなく、')
+# 「だけではなく」「のみではなく」は追加（〜だけでなく〜も）、「容易ではなく」などは形容動詞の否定なので除く
+NOT_CONTRAST_BEFORE = ''.join(f'(?<!{w})' for w in ('だけ', 'のみ', '容易', '簡単', '単純', '平坦', '一様', '十分', '得意', '自明', '一筋縄', '楽'))
+BINARY_CONTRAST = re.compile(r'(?:単なる|ただの)[^。、]{0,20}?ではなく、?|[^。、「」は]{1,20}?であって[^。、]{1,10}?ではない|'
+                             + NOT_CONTRAST_BEFORE + r'ではなく、')
 NEGATIVE_LISTING = re.compile(r'でもない、[^。]{1,20}?でもない')
 # モノや抽象が人の動作をする言い方
 FALSE_AGENCY = re.compile(r'(?:データ|数字|数値|結果|歴史|事実|経験|現実)(?:が|は)(?:示して|物語って|語って|教えてくれ)'
@@ -263,6 +266,20 @@ def undefined_terms(text, keep=()):
     return result
 
 
+# 指摘の分類。強調・誇張は説得のために意図して選ぶこともあるので、AIに多い型と混ぜずに数える
+CATEGORY_LABELS = {'context': '文脈の漏れ・根拠のない前提', 'ai-pattern': 'AIに多い型',
+                   'emphasis': '強調・誇張（意図的なら残してよい）', 'readability': '読みやすさ'}
+RULE_CATEGORY = {
+    'undefined-term': 'context', 'unsourced-claim': 'context',
+    'binary-contrast': 'ai-pattern', 'negative-listing': 'ai-pattern', 'false-agency': 'ai-pattern',
+    'symbol-artifact': 'ai-pattern', 'katakana-metaphor': 'ai-pattern', 'pet-word': 'ai-pattern',
+    'academic-self': 'ai-pattern', 'closing-suggestion': 'ai-pattern',
+    'inflated-language': 'emphasis', 'self-declared-importance': 'emphasis', 'vague-degree': 'emphasis',
+    'noun-chain': 'readability', 'noun-heavy': 'readability', 'long-sentence': 'readability',
+    'abstract-stack': 'readability', 'redundant-opening': 'readability', 'roundabout-capability': 'readability',
+}
+
+
 def is_proper(token):
     return token.pos[:2] == ('名詞', '固有名詞')
 
@@ -275,7 +292,8 @@ def named_counts(text, tokens, keep):
     """固有名詞は辞書が固有名詞と判定した位置だけを数え、keepの語は文字列として数える。
     （「としての」の「して」のように、別の位置で固有名詞と判定された文字列を全出現で数えないため）"""
     keep = set(keep)
-    counts = Counter(t.surface for t in tokens if is_proper(t) and t.surface not in keep)
+    # 英字の語は ascii_terms で語ごとに照合するので、辞書が切った断片（「st」「op」など）はここで数えない
+    counts = Counter(t.surface for t in tokens if is_proper(t) and t.surface not in keep and not t.surface.isascii())
     counts.update({w: text.count(w) for w in keep if w})
     return counts
 
@@ -299,7 +317,7 @@ def inspect(text, analyzer, keep=()):
         # （NEologdは「企業」「お客様」のような一般語も固有名詞とするため、重なりだけで消すと「多くの企業」が消える）
         if guard and (overlaps(start, end, protected) or any(a <= start and end <= b for a, b in name_spans)):
             return
-        findings.append({'rule': rule, 'start': start, 'end': end,
+        findings.append({'rule': rule, 'category': RULE_CATEGORY[rule], 'start': start, 'end': end,
                          'line': text.count('\n', 0, start) + 1,
                          'column': start - text.rfind('\n', 0, start),
                          'text': text[start:end], 'reason': reason, 'replacement': replacement})
@@ -530,7 +548,12 @@ def report(before, after, analyzer, keep=()):
              f'| 指摘（修正前 → 修正後） | {sum(b_count.values())} → {sum(a_count.values())} |',
              f'| 解消 | {sum(resolved.values())} |', f'| 残存 | {sum(remaining.values())} |',
              f'| 新規 | {sum(new.values())} |', f'| 機械照合 | {STATUS_LABEL[check["status"]]} |',
-             f'| 診断エンジン | {engine} |', '', '## 文書全体の傾向', '']
+             f'| 診断エンジン | {engine} |', '', '## 指摘の分類', '',
+             '| 分類 | 修正前 | 修正後 |', '| --- | --- | --- |']
+    b_cat = Counter(f['category'] for f in b_report['findings'])
+    a_cat = Counter(f['category'] for f in a_report['findings'])
+    lines += [f'| {label} | {b_cat[cat]} | {a_cat[cat]} |' for cat, label in CATEGORY_LABELS.items()]
+    lines += ['', '## 文書全体の傾向', '']
     b_style, a_style = style_tendency(before), style_tendency(after)
     pct = lambda v: '—' if v is None else f'{round(v * 100)}%'
     lines += ['| 項目 | 修正前 | 修正後 |', '| --- | --- | --- |',
