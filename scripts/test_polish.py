@@ -357,6 +357,15 @@ class RevisionTests(unittest.TestCase):
                 found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'self-declared-importance']
                 self.assertEqual(found, [expected])
 
+    def test_other_forms_of_declaring_importance_are_flagged(self):
+        for source, expected in [('原因3は文脈の不足です。これが最も重要です。', 'これが最も重要です'),
+                                 ('ここからが本題です。', 'ここからが本題'),
+                                 ('ここに、スロップの核心があります。', 'ここに、スロップの核心があります'),
+                                 ('ここに突破口があります。', 'ここに突破口があります')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'self-declared-importance']
+                self.assertEqual(found, [expected])
+
     def test_ordinary_use_of_important_words_is_not_flagged(self):
         for source in ['重要な書類を送ります。', '品質が重要です。', '鍵は玄関の棚にあります。']:
             with self.subTest(source=source):
