@@ -10,6 +10,61 @@ from unittest import mock
 import polish
 
 
+class ShiteAsProperNounAnalyzer:
+    """NEologdが「としての」の「して」を固有名詞と判定した実例を再現する。
+    「して」の後ろが「の」のときだけ固有名詞、それ以外は動詞として返す。"""
+    tagger = True
+    info = {'mode': 'stub', 'morphology': True}
+
+    def tokens(self, text):
+        return [polish.Token(m.start(), m.end(), 'して',
+                             ('名詞', '固有名詞', '一般') if text[m.end():m.end() + 1] == 'の' else ('動詞', '非自立可能'))
+                for m in polish.re.finditer('して', text)]
+
+
+class TaggedAsProperNounAnalyzer:
+    """指定した語をすべて固有名詞と判定する。NEologdが「企業」「お客様」などの一般語を固有名詞とした実例の再現用。"""
+    info = {'mode': 'stub', 'morphology': True}
+
+    def __init__(self, *words):
+        self.tagger, self.words = True, words
+
+    def tokens(self, text):
+        return sorted((polish.Token(m.start(), m.end(), w, ('名詞', '固有名詞', '一般'))
+                       for w in self.words for m in polish.re.finditer(polish.re.escape(w), text)),
+                      key=lambda t: t.start)
+
+
+class ProperNounPositionTests(unittest.TestCase):
+    def test_finding_that_only_overlaps_a_proper_noun_is_kept(self):
+        source = '多くの企業が導入しています。先日、あるお客様から連絡がありました。'
+        found = [f['text'] for f in polish.inspect(source, TaggedAsProperNounAnalyzer('企業', 'お客様'))['findings']
+                 if f['rule'] == 'unsourced-claim']
+        self.assertEqual(found, ['多くの企業', 'あるお客様から'])
+
+    def test_finding_inside_a_proper_noun_is_still_suppressed(self):
+        source = '圧倒的プロダクト社に相談します。'
+        rules = [f['rule'] for f in polish.inspect(source, TaggedAsProperNounAnalyzer('圧倒的プロダクト社'))['findings']]
+        self.assertNotIn('inflated-language', rules)
+
+    def test_proper_noun_elsewhere_does_not_hide_findings_at_other_positions(self):
+        source = 'EM目線としての改善です。ぜひ試してみてはいかがでしょうか。'
+        found = [f['text'] for f in polish.inspect(source, ShiteAsProperNounAnalyzer())['findings'] if f['rule'] == 'closing-suggestion']
+        self.assertEqual(found, ['てみてはいかがでしょうか'])
+
+    def test_changing_the_same_string_at_a_non_proper_position_is_not_a_name_change(self):
+        before = 'EM目線としての改善です。中心として扱います。'
+        after = 'EM目線としての改善です。中心に扱います。'
+        result = polish.verify(before, after, ShiteAsProperNounAnalyzer())
+        self.assertNotIn('named_terms', result['changes'])
+
+    def test_removing_the_proper_noun_itself_is_still_a_name_change(self):
+        before = 'EM目線としての改善です。'
+        after = 'EM目線での改善です。'
+        result = polish.verify(before, after, ShiteAsProperNounAnalyzer())
+        self.assertEqual(result['changes']['named_terms']['removed'], {'して': 1})
+
+
 class RevisionTests(unittest.TestCase):
     def setUp(self):
         self.analyzer = polish.Analyzer(lightweight=True)

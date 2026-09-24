@@ -213,8 +213,21 @@ def undefined_terms(text, keep=()):
     return result
 
 
+def is_proper(token):
+    return token.pos[:2] == ('名詞', '固有名詞')
+
+
 def proper_terms(tokens):
-    return {t.surface for t in tokens if t.pos[:2] == ('名詞', '固有名詞')}
+    return {t.surface for t in tokens if is_proper(t)}
+
+
+def named_counts(text, tokens, keep):
+    """固有名詞は辞書が固有名詞と判定した位置だけを数え、keepの語は文字列として数える。
+    （「としての」の「して」のように、別の位置で固有名詞と判定された文字列を全出現で数えないため）"""
+    keep = set(keep)
+    counts = Counter(t.surface for t in tokens if is_proper(t) and t.surface not in keep)
+    counts.update({w: text.count(w) for w in keep if w})
+    return counts
 
 
 def term_spans(text, names):
@@ -226,11 +239,15 @@ def inspect(text, analyzer, keep=()):
     prose = mask(text, protected)
     tokens = analyzer.tokens(prose)
     names = proper_terms(tokens) | set(keep)
-    guarded = protected + term_spans(text, names)
+    # 固有名詞は判定された位置だけを守る。keepの語はどこに出ても守る
+    name_spans = [(t.start, t.end) for t in tokens if is_proper(t)] + term_spans(text, keep)
+    guarded = protected + name_spans
     findings = []
 
     def add(rule, start, end, reason, replacement=None, guard=True):
-        if guard and overlaps(start, end, guarded):
+        # コード・引用などは少しでも重なれば除外する。固有名詞とkeepの語は、指摘がその中に収まるときだけ除外する
+        # （NEologdは「企業」「お客様」のような一般語も固有名詞とするため、重なりだけで消すと「多くの企業」が消える）
+        if guard and (overlaps(start, end, protected) or any(a <= start and end <= b for a, b in name_spans)):
             return
         findings.append({'rule': rule, 'start': start, 'end': end,
                          'line': text.count('\n', 0, start) + 1,
@@ -302,12 +319,12 @@ def delta(before, after):
 def verify(before, after, analyzer, keep=()):
     b_spans, a_spans = protected_spans(before), protected_spans(after)
     b_plain, a_plain = mask(before, b_spans), mask(after, a_spans)
-    names = proper_terms(analyzer.tokens(b_plain)) | proper_terms(analyzer.tokens(a_plain)) | set(keep)
+    b_tokens, a_tokens = analyzer.tokens(b_plain), analyzer.tokens(a_plain)
     checks = {
         'numbers_and_units': delta(Counter(NUMBER.findall(before)), Counter(NUMBER.findall(after))),
         'protected_regions': delta(Counter(before[a:b] for a, b in b_spans), Counter(after[a:b] for a, b in a_spans)),
         'ascii_terms': delta(Counter(ASCII_TERM.findall(b_plain)), Counter(ASCII_TERM.findall(a_plain))),
-        'named_terms': delta(Counter({w: before.count(w) for w in names}), Counter({w: after.count(w) for w in names})),
+        'named_terms': delta(named_counts(before, b_tokens, keep), named_counts(after, a_tokens, keep)),
     }
     checks = {k: v for k, v in checks.items() if v['removed'] or v['added']}
     review = []
