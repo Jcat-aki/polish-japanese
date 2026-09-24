@@ -245,11 +245,14 @@ def inspect(text, analyzer, keep=()):
     tokens = analyzer.tokens(prose)
     names = proper_terms(tokens) | set(keep)
     # 固有名詞は判定された位置だけを守る。keepの語はどこに出ても守る
-    guarded = protected + [(t.start, t.end) for t in tokens if is_proper(t)] + term_spans(text, keep)
+    name_spans = [(t.start, t.end) for t in tokens if is_proper(t)] + term_spans(text, keep)
+    guarded = protected + name_spans
     findings = []
 
     def add(rule, start, end, reason, replacement=None, guard=True):
-        if guard and overlaps(start, end, guarded):
+        # コード・引用などは少しでも重なれば除外する。固有名詞とkeepの語は、指摘がその中に収まるときだけ除外する
+        # （NEologdは「企業」「お客様」のような一般語も固有名詞とするため、重なりだけで消すと「多くの企業」が消える）
+        if guard and (overlaps(start, end, protected) or any(a <= start and end <= b for a, b in name_spans)):
             return
         findings.append({'rule': rule, 'start': start, 'end': end,
                          'line': text.count('\n', 0, start) + 1,

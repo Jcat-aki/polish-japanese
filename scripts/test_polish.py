@@ -22,7 +22,31 @@ class ShiteAsProperNounAnalyzer:
                 for m in polish.re.finditer('して', text)]
 
 
+class TaggedAsProperNounAnalyzer:
+    """指定した語をすべて固有名詞と判定する。NEologdが「企業」「お客様」などの一般語を固有名詞とした実例の再現用。"""
+    info = {'mode': 'stub', 'morphology': True}
+
+    def __init__(self, *words):
+        self.tagger, self.words = True, words
+
+    def tokens(self, text):
+        return sorted((polish.Token(m.start(), m.end(), w, ('名詞', '固有名詞', '一般'))
+                       for w in self.words for m in polish.re.finditer(polish.re.escape(w), text)),
+                      key=lambda t: t.start)
+
+
 class ProperNounPositionTests(unittest.TestCase):
+    def test_finding_that_only_overlaps_a_proper_noun_is_kept(self):
+        source = '多くの企業が導入しています。先日、あるお客様から連絡がありました。'
+        found = [f['text'] for f in polish.inspect(source, TaggedAsProperNounAnalyzer('企業', 'お客様'))['findings']
+                 if f['rule'] == 'unsourced-claim']
+        self.assertEqual(found, ['多くの企業', 'あるお客様から'])
+
+    def test_finding_inside_a_proper_noun_is_still_suppressed(self):
+        source = '圧倒的プロダクト社に相談します。'
+        rules = [f['rule'] for f in polish.inspect(source, TaggedAsProperNounAnalyzer('圧倒的プロダクト社'))['findings']]
+        self.assertNotIn('inflated-language', rules)
+
     def test_proper_noun_elsewhere_does_not_hide_findings_at_other_positions(self):
         source = 'EM目線としての改善です。ぜひ試してみてはいかがでしょうか。'
         found = [f['text'] for f in polish.inspect(source, ShiteAsProperNounAnalyzer())['findings'] if f['rule'] == 'closing-suggestion']
