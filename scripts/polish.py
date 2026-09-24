@@ -188,6 +188,13 @@ SELF_IMPORTANCE = re.compile(
 CLOSING_SUGGESTION = re.compile(r'てみては(?:いかが|どう)でしょうか|いかがでしたか')
 # 程度を強める語。同じ文に数字がなければ、どのくらいかは書き手しか知らない
 VAGUE_DEGREE = re.compile(r'非常に|とても|大幅に|劇的に|格段に|著しく|かなり|大きく')
+# 文の型（stop-ai-slop-jp の観点を参考に独自に定義）。
+# 「AではなくB」は名詞を選ぶだけの普通の用法（「雨ではなく晴れ」）が多いので、節をつなぐ形と「単なる／であって」の形だけを見る
+BINARY_CONTRAST = re.compile(r'(?:単なる|ただの)[^。、]{0,20}?ではなく、?|[^。、「」は]{1,20}?であって[^。、]{1,10}?ではない|ではなく、')
+NEGATIVE_LISTING = re.compile(r'でもない、[^。]{1,20}?でもない')
+# モノや抽象が人の動作をする言い方
+FALSE_AGENCY = re.compile(r'(?:データ|数字|数値|結果|歴史|事実|経験|現実)(?:が|は)(?:示して|物語って|語って|教えてくれ)'
+                          r'|浮き彫りに(?:な|し)|醸成され|結実し')
 # 伝聞の形。言った人や発言の引用が同じ文にあれば、根拠のない前提として扱わない
 HEARSAY = re.compile(r'と言われ|とされ|(?:として|と)語られ')
 ABSTRACT = re.compile(r'最適化|効率化|高度化|知見|共有|活用|推進|強化|向上|実現|確保|促進|価値創出|課題解決|相乗効果|多角的|包括的')
@@ -310,6 +317,12 @@ def inspect(text, analyzer, keep=()):
         for m in VAGUE_DEGREE.finditer(sentence[0]):
             add('vague-degree', sentence.start() + m.start(), sentence.start() + m.end(),
                 'どのくらいかが数字や具体例で書かれていない。中身は書き手しか知らないので補わず、書き手に尋ねる。')
+    for m in BINARY_CONTRAST.finditer(prose):
+        add('binary-contrast', *m.span(), '「AではなくB」の対比で主張を立てている。Aが誰も言っていない想定なら、Bを直接書く。')
+    for m in NEGATIVE_LISTING.finditer(prose):
+        add('negative-listing', *m.span(), '「Aでもない、Bでもない」と否定を重ねて答えを引き延ばしている。答えを先に書く。')
+    for m in FALSE_AGENCY.finditer(prose):
+        add('false-agency', *m.span(), 'モノや抽象が人の動作をしている。誰が何を見て、何をしたのかに書き換える。')
     for m in SELF_IMPORTANCE.finditer(prose):
         add('self-declared-importance', *m.span(),
             '重要さを自分で宣言している。前置きを外し、何がなぜ大事かをそのまま書けば読み手は自分で判断できる。')

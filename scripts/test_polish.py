@@ -366,6 +366,38 @@ class RevisionTests(unittest.TestCase):
                 found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'self-declared-importance']
                 self.assertEqual(found, [expected])
 
+    def test_rhetorical_contrast_is_flagged(self):
+        for source, expected in [('これは単なる文体の癖の話ではなく、根本的な問いです。', '単なる文体の癖の話ではなく、'),
+                                 ('これらは症状であって病気ではない。', '症状であって病気ではない'),
+                                 ('速さではなく、正確さが求められる。', 'ではなく、')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'binary-contrast']
+                self.assertEqual(found, [expected])
+
+    def test_plain_choice_between_nouns_is_not_a_rhetorical_contrast(self):
+        for source in ['今日は雨ではなく晴れです。', 'ピザではなくパスタを頼んだ。']:
+            with self.subTest(source=source):
+                rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+                self.assertNotIn('binary-contrast', rules)
+
+    def test_negative_listing_is_flagged(self):
+        found = [f['text'] for f in polish.inspect('速さでもない、安さでもない、信頼だ。', self.analyzer)['findings']
+                 if f['rule'] == 'negative-listing']
+        self.assertEqual(found, ['でもない、安さでもない'])
+
+    def test_things_doing_human_actions_are_flagged(self):
+        for source, expected in [('データが示しているのは需要の変化だ。', 'データが示して'),
+                                 ('歴史が物語っている。', '歴史が物語って'),
+                                 ('課題が浮き彫りになった。', '浮き彫りにな'),
+                                 ('挑戦する文化が醸成される。', '醸成され')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'false-agency']
+                self.assertEqual(found, [expected])
+
+    def test_person_presenting_data_is_not_false_agency(self):
+        rules = [f['rule'] for f in polish.inspect('担当者がデータを示した。', self.analyzer)['findings']]
+        self.assertNotIn('false-agency', rules)
+
     def test_ordinary_use_of_important_words_is_not_flagged(self):
         for source in ['重要な書類を送ります。', '品質が重要です。', '鍵は玄関の棚にあります。']:
             with self.subTest(source=source):
