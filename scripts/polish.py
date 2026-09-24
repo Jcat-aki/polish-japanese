@@ -156,6 +156,8 @@ UNSOURCED = re.compile(
 # 「鍵」は実物の鍵と区別できないので含めない。「いかがでしょうか」単独は本当の問いかけがあるので含めない
 SELF_IMPORTANCE = re.compile(r'(?:ここで|最も|特に|一番)?(?:重要|大切|大事|肝心)な(?:の|こと|点)は|(?:本質|核心|ポイント|キモ)は')
 CLOSING_SUGGESTION = re.compile(r'てみては(?:いかが|どう)でしょうか|いかがでしたか')
+# 程度を強める語。同じ文に数字がなければ、どのくらいかは書き手しか知らない
+VAGUE_DEGREE = re.compile(r'非常に|とても|大幅に|劇的に|格段に|著しく|かなり|大きく')
 ABSTRACT = re.compile(r'最適化|効率化|高度化|知見|共有|活用|推進|強化|向上|実現|確保|促進|価値創出|課題解決|相乗効果|多角的|包括的')
 NUMBER = re.compile(r'[+\-−]?[0-9０-９]+(?:[,.．，][0-9０-９]+)*(?:[ \t]*(?:億円|万円|千円|円|ms|秒|分|時間|日|年|月|%|％|kg|GB|MB|人|件|回|倍|個|台))?(?:以上|以下|未満|以内|超|程度|前後)?')
 ASCII_TERM = re.compile(r'[A-Za-z][A-Za-z0-9]*(?:[_.+/#-][A-Za-z0-9]+)*')
@@ -265,6 +267,12 @@ def inspect(text, analyzer, keep=()):
         add('unsourced-claim', *m.span(),
             '原文に根拠のない一般化・伝聞・読み手の気持ちの推測・ぼかした体験談かもしれない。'
             '根拠や出典が本文にあれば残す。なければ削るか書き手に確認し、もっともらしく補わない。')
+    for sentence in SENTENCE.finditer(prose):
+        if NUMBER.search(sentence[0]):
+            continue
+        for m in VAGUE_DEGREE.finditer(sentence[0]):
+            add('vague-degree', sentence.start() + m.start(), sentence.start() + m.end(),
+                'どのくらいかが数字や具体例で書かれていない。中身は書き手しか知らないので補わず、書き手に尋ねる。')
     for m in SELF_IMPORTANCE.finditer(prose):
         add('self-declared-importance', *m.span(),
             '重要さを自分で宣言している。前置きを外し、何がなぜ大事かをそのまま書けば読み手は自分で判断できる。')

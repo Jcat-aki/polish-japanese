@@ -265,6 +265,20 @@ class RevisionTests(unittest.TestCase):
                 rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
                 self.assertNotIn('unsourced-claim', rules)
 
+    def test_degree_without_number_or_example_is_flagged(self):
+        for source, expected in [('要件定義の手戻りが非常に多い', '非常に'),
+                                 ('リードタイムを大幅に短縮しました。', '大幅に'),
+                                 ('問い合わせがかなり減りました。', 'かなり')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'vague-degree']
+                self.assertEqual(found, [expected])
+
+    def test_degree_backed_by_a_number_in_the_same_sentence_is_not_flagged(self):
+        for source in ['手戻りが非常に多く、月に10件ありました。', 'リードタイムを3日から1日へ大幅に短縮しました。']:
+            with self.subTest(source=source):
+                rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+                self.assertNotIn('vague-degree', rules)
+
     def test_plain_statement_is_not_flagged_as_unsourced(self):
         for source in ['当社は2018年から配送を手がけています。', '「一般的に」という言葉は避けます。']:
             with self.subTest(source=source):
