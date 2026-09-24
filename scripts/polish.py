@@ -266,6 +266,20 @@ def undefined_terms(text, keep=()):
     return result
 
 
+# 指摘の分類。強調・誇張は説得のために意図して選ぶこともあるので、AIに多い型と混ぜずに数える
+CATEGORY_LABELS = {'context': '文脈の漏れ・根拠のない前提', 'ai-pattern': 'AIに多い型',
+                   'emphasis': '強調・誇張（意図的なら残してよい）', 'readability': '読みやすさ'}
+RULE_CATEGORY = {
+    'undefined-term': 'context', 'unsourced-claim': 'context',
+    'binary-contrast': 'ai-pattern', 'negative-listing': 'ai-pattern', 'false-agency': 'ai-pattern',
+    'symbol-artifact': 'ai-pattern', 'katakana-metaphor': 'ai-pattern', 'pet-word': 'ai-pattern',
+    'academic-self': 'ai-pattern', 'closing-suggestion': 'ai-pattern',
+    'inflated-language': 'emphasis', 'self-declared-importance': 'emphasis', 'vague-degree': 'emphasis',
+    'noun-chain': 'readability', 'noun-heavy': 'readability', 'long-sentence': 'readability',
+    'abstract-stack': 'readability', 'redundant-opening': 'readability', 'roundabout-capability': 'readability',
+}
+
+
 def is_proper(token):
     return token.pos[:2] == ('名詞', '固有名詞')
 
@@ -303,7 +317,7 @@ def inspect(text, analyzer, keep=()):
         # （NEologdは「企業」「お客様」のような一般語も固有名詞とするため、重なりだけで消すと「多くの企業」が消える）
         if guard and (overlaps(start, end, protected) or any(a <= start and end <= b for a, b in name_spans)):
             return
-        findings.append({'rule': rule, 'start': start, 'end': end,
+        findings.append({'rule': rule, 'category': RULE_CATEGORY[rule], 'start': start, 'end': end,
                          'line': text.count('\n', 0, start) + 1,
                          'column': start - text.rfind('\n', 0, start),
                          'text': text[start:end], 'reason': reason, 'replacement': replacement})
@@ -534,7 +548,12 @@ def report(before, after, analyzer, keep=()):
              f'| 指摘（修正前 → 修正後） | {sum(b_count.values())} → {sum(a_count.values())} |',
              f'| 解消 | {sum(resolved.values())} |', f'| 残存 | {sum(remaining.values())} |',
              f'| 新規 | {sum(new.values())} |', f'| 機械照合 | {STATUS_LABEL[check["status"]]} |',
-             f'| 診断エンジン | {engine} |', '', '## 文書全体の傾向', '']
+             f'| 診断エンジン | {engine} |', '', '## 指摘の分類', '',
+             '| 分類 | 修正前 | 修正後 |', '| --- | --- | --- |']
+    b_cat = Counter(f['category'] for f in b_report['findings'])
+    a_cat = Counter(f['category'] for f in a_report['findings'])
+    lines += [f'| {label} | {b_cat[cat]} | {a_cat[cat]} |' for cat, label in CATEGORY_LABELS.items()]
+    lines += ['', '## 文書全体の傾向', '']
     b_style, a_style = style_tendency(before), style_tendency(after)
     pct = lambda v: '—' if v is None else f'{round(v * 100)}%'
     lines += ['| 項目 | 修正前 | 修正後 |', '| --- | --- | --- |',
