@@ -375,7 +375,10 @@ class RevisionTests(unittest.TestCase):
                 self.assertEqual(found, [expected])
 
     def test_plain_choice_between_nouns_is_not_a_rhetorical_contrast(self):
-        for source in ['今日は雨ではなく晴れです。', 'ピザではなくパスタを頼んだ。']:
+        for source in ['今日は雨ではなく晴れです。', 'ピザではなくパスタを頼んだ。',
+                       # 「だけではなく」は追加（〜だけでなく〜も）、「容易ではなく」は形容動詞の否定で、どちらも対比ではない
+                       'これは個人の努力だけではなく、組織の環境が支えていました。',
+                       '職能の壁を越えた協働は容易ではなく、失敗も多くありました。']:
             with self.subTest(source=source):
                 rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
                 self.assertNotIn('binary-contrast', rules)
