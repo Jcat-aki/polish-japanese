@@ -61,6 +61,29 @@ class CommonWordsTaggedAsProperTests(unittest.TestCase):
         self.assertEqual(polish.refine_proper([token], self.base.get), [token])
 
 
+class SplitsAsciiByContextAnalyzer:
+    """NEologdが英字の語を文脈によって「st」「op」のような断片に切り、固有名詞とした実例を再現する。"""
+    tagger = True
+    info = {'mode': 'stub', 'morphology': True}
+
+    def tokens(self, text):
+        if '観点' not in text:
+            return []
+        start = text.find('stop')
+        return [polish.Token(start, start + 2, 'st', ('名詞', '固有名詞', '一般')),
+                polish.Token(start + 2, start + 4, 'op', ('名詞', '固有名詞', '一般'))]
+
+
+class AsciiFragmentTests(unittest.TestCase):
+    def test_fragments_of_an_ascii_word_are_not_counted_as_names(self):
+        result = polish.verify('stop を参考にした。', 'stop の観点を参考にした。', SplitsAsciiByContextAnalyzer())
+        self.assertNotIn('named_terms', result['changes'])
+
+    def test_ascii_word_itself_is_still_checked(self):
+        result = polish.verify('stop を参考にした。', 'go を参考にした。', SplitsAsciiByContextAnalyzer())
+        self.assertEqual(result['changes']['ascii_terms']['removed'], {'stop': 1})
+
+
 class ProperNounPositionTests(unittest.TestCase):
     def test_finding_that_only_overlaps_a_proper_noun_is_kept(self):
         source = '多くの企業が導入しています。先日、あるお客様から連絡がありました。'
@@ -434,6 +457,26 @@ class RevisionTests(unittest.TestCase):
             with self.subTest(source=source):
                 found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'academic-self']
                 self.assertEqual(found, [expected])
+
+    def test_findings_are_categorized_so_emphasis_is_not_mixed_with_ai_patterns(self):
+        for source, rule, category in [('圧倒的な効率化です。', 'inflated-language', 'emphasis'),
+                                       ('本質は顧客体験にあります。', 'self-declared-importance', 'emphasis'),
+                                       ('結論——それは信頼だ。', 'symbol-artifact', 'ai-pattern'),
+                                       ('一般的に、配送は遅れがちです。', 'unsourced-claim', 'context')]:
+            with self.subTest(source=source):
+                found = [f['category'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == rule]
+                self.assertEqual(found, [category])
+
+    def test_every_finding_has_a_category(self):
+        source = ('まず最初に、ここで重要なのは、圧倒的な効率化ではなく、データが示している事実です。'
+                  '一般的にkeep.dicは非常に大きいと言われています。思考のOSをアップデートしてみてはいかがでしょうか——')
+        for finding in polish.inspect(source, self.analyzer)['findings']:
+            with self.subTest(rule=finding['rule']):
+                self.assertIn(finding['category'], polish.CATEGORY_LABELS)
+
+    def test_report_counts_findings_by_category(self):
+        sheet = polish.report('圧倒的な効率化です。', '効率化です。', self.analyzer)
+        self.assertIn('| 強調・誇張（意図的なら残してよい） | 1 | 0 |', sheet.split('## 指摘の分類')[1])
 
     def test_ordinary_use_of_important_words_is_not_flagged(self):
         for source in ['重要な書類を送ります。', '品質が重要です。', '鍵は玄関の棚にあります。']:
