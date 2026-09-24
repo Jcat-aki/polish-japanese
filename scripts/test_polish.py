@@ -478,6 +478,21 @@ class RevisionTests(unittest.TestCase):
         sheet = polish.report('圧倒的な効率化です。', '効率化です。', self.analyzer)
         self.assertIn('| 強調・誇張（意図的なら残してよい） | 1 | 0 |', sheet.split('## 指摘の分類')[1])
 
+    def test_era_opener_is_flagged(self):
+        for source, expected in [('AIの進化が目覚ましいこの時代において、課題は物理世界にある。', '進化が目覚ましいこの時代において'),
+                                 ('変化の激しい時代に、チームは何を守るべきか。', '変化の激しい時代'),
+                                 ('生成AI時代において、エンジニアの役割は変わる。', '生成AI時代において'),
+                                 ('技術の発展が著しい昨今、', '発展が著しい昨今')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'era-opener']
+                self.assertEqual(found, [expected])
+
+    def test_historical_or_personal_eras_are_not_era_openers(self):
+        for source in ['江戸時代において、物流は川が担った。', '学生時代に、初めてアプリを作った。']:
+            with self.subTest(source=source):
+                rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+                self.assertNotIn('era-opener', rules)
+
     def test_ordinary_use_of_important_words_is_not_flagged(self):
         for source in ['重要な書類を送ります。', '品質が重要です。', '鍵は玄関の棚にあります。']:
             with self.subTest(source=source):

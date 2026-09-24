@@ -204,6 +204,9 @@ DECORATIVE_EMOJI = re.compile('[\U0001F680\U0001F3AF\u2728\U0001F4A1\U0001F525\U
 KATAKANA_METAPHOR = re.compile(r'(?:思考|考え方|マインド|脳|人生|習慣|キャリア|仕事|働き方)(?:の|を)(?:OS|アップデート|ハック|インストール|リファクタリング)')
 PET_WORD = re.compile(r'解像度(?:が|を)(?:高|上げ|低)|解像度の高い|手触り感?|泥臭さ|熱量|営み|腹落ち')
 ACADEMIC_SELF = re.compile(r'本稿|本記事|本論文|筆者')
+# 時代を持ち出す決まった書き出し。「江戸時代において」「学生時代に」のような具体的な時代は含めない
+ERA_OPENER = re.compile(r'(?:進化|発展|変化|普及|進歩)(?:が|の)(?:目覚ましい|著しい|激しい|進む|速い)(?:この|今の|現在の)?(?:時代|昨今|現代|世の中)(?:において)?'
+                        r'|(?:生成AI|AI|DX)時代(?:において|の今|だからこそ)|現代社会において')
 # 伝聞の形。言った人や発言の引用が同じ文にあれば、根拠のない前提として扱わない
 HEARSAY = re.compile(r'と言われ|とされ|(?:として|と)語られ')
 ABSTRACT = re.compile(r'最適化|効率化|高度化|知見|共有|活用|推進|強化|向上|実現|確保|促進|価値創出|課題解決|相乗効果|多角的|包括的')
@@ -273,7 +276,7 @@ RULE_CATEGORY = {
     'undefined-term': 'context', 'unsourced-claim': 'context',
     'binary-contrast': 'ai-pattern', 'negative-listing': 'ai-pattern', 'false-agency': 'ai-pattern',
     'symbol-artifact': 'ai-pattern', 'katakana-metaphor': 'ai-pattern', 'pet-word': 'ai-pattern',
-    'academic-self': 'ai-pattern', 'closing-suggestion': 'ai-pattern',
+    'academic-self': 'ai-pattern', 'closing-suggestion': 'ai-pattern', 'era-opener': 'ai-pattern',
     'inflated-language': 'emphasis', 'self-declared-importance': 'emphasis', 'vague-degree': 'emphasis',
     'noun-chain': 'readability', 'noun-heavy': 'readability', 'long-sentence': 'readability',
     'abstract-stack': 'readability', 'redundant-opening': 'readability', 'roundabout-capability': 'readability',
@@ -365,6 +368,8 @@ def inspect(text, analyzer, keep=()):
         add('pet-word', *m.span(), 'AIが好んで使う語。何を指すのかを具体的な言葉で書く。1つの文章に何度も撒かない。')
     for m in ACADEMIC_SELF.finditer(prose):
         add('academic-self', *m.span(), '論文風の自称。「この記事」「私」のように普通に書く。')
+    for m in ERA_OPENER.finditer(prose):
+        add('era-opener', *m.span(), '時代を持ち出す決まった書き出し。どの文章にも当てはまるので、自分の現場で起きたことから書き始める。')
     for m in SELF_IMPORTANCE.finditer(prose):
         add('self-declared-importance', *m.span(),
             '重要さを自分で宣言している。前置きを外し、何がなぜ大事かをそのまま書けば読み手は自分で判断できる。')
