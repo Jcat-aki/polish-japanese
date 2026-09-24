@@ -75,6 +75,19 @@ def mask(text, spans):
     return ''.join(chars)
 
 
+def refine_proper(tokens, base_pos_of):
+    """追加辞書（NEologd等）が固有名詞とした語を、基本辞書だけの解析で見直す。
+    基本辞書がその語を1語の固有名詞以外（普通名詞・連体詞など）と読むなら、一般語として扱う。
+    基本辞書が複数の語に分ける語（ピックゴー、東京スカイツリー）と英字の語は、追加辞書の判定を残す。"""
+    result = []
+    for token in tokens:
+        base = base_pos_of(token.surface) if token.pos[:2] == ('名詞', '固有名詞') and not token.surface.isascii() else None
+        if base and len(base) == 1 and base[0][:2] != ('名詞', '固有名詞'):
+            token = Token(token.start, token.end, token.surface, base[0])
+        result.append(token)
+    return result
+
+
 class Analyzer:
     def __init__(self, dic=None, lightweight=False, user_dic=None):
         self.tagger = None
@@ -107,6 +120,9 @@ class Analyzer:
         if user_paths:
             options += f' -u "{",".join(user_paths)}"'
         self.tagger = MeCab.Tagger(options)
+        # 追加辞書があるときは、固有名詞の判定を見直すために基本辞書だけの解析器も持つ
+        self.base_tagger = MeCab.Tagger(f'-r "{os.devnull}" -d "{path}"') if user_paths else None
+        self._base_cache = {}
         info = self.tagger.dictionary_info()
         if info is None or info.charset.lower().replace('-', '') != 'utf8':
             raise ValueError('UTF-8の辞書が必要です。')
@@ -139,7 +155,17 @@ class Analyzer:
             node = node.next
         if text[cursor:].strip():
             raise ValueError('形態素解析が本文の途中で終了しました。')
-        return result
+        return refine_proper(result, self._base_pos) if self.base_tagger else result
+
+    def _base_pos(self, surface):
+        if surface not in self._base_cache:
+            poses, node = [], self.base_tagger.parseToNode(surface)
+            while node:
+                if node.surface:
+                    poses.append(tuple(next(csv.reader([node.feature])))[:4])
+                node = node.next
+            self._base_cache[surface] = poses
+        return self._base_cache[surface]
 
 
 # 原文に根拠がなくても書けてしまう前提：出典のない一般化・伝聞、読み手の気持ちの推測、ぼかした体験談

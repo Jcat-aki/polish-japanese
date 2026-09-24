@@ -35,6 +35,32 @@ class TaggedAsProperNounAnalyzer:
                       key=lambda t: t.start)
 
 
+class CommonWordsTaggedAsProperTests(unittest.TestCase):
+    """NEologdが一般語を固有名詞とした判定を、基本辞書（UniDic）だけの解析で見直す。"""
+    PROPER = ('名詞', '固有名詞', '一般')
+    COMMON = ('名詞', '普通名詞', '一般')
+    base = {'観点': [COMMON], '企業': [COMMON], 'ある': [('連体詞', '*', '*')],
+            'ピックゴー': [COMMON, COMMON], '東京': [('名詞', '固有名詞', '地名')], 'CBcloud': [COMMON]}
+
+    def refined(self, surface):
+        token = polish.Token(0, len(surface), surface, self.PROPER)
+        return polish.refine_proper([token], self.base.get)[0].pos
+
+    def test_word_the_base_dictionary_reads_as_one_common_word_is_not_proper(self):
+        for surface, expected in [('観点', self.COMMON), ('企業', self.COMMON), ('ある', ('連体詞', '*', '*'))]:
+            with self.subTest(surface=surface):
+                self.assertEqual(self.refined(surface), expected)
+
+    def test_compound_names_real_proper_nouns_and_ascii_names_stay_proper(self):
+        for surface in ['ピックゴー', '東京', 'CBcloud']:
+            with self.subTest(surface=surface):
+                self.assertEqual(self.refined(surface), self.PROPER)
+
+    def test_tokens_not_tagged_proper_are_left_alone(self):
+        token = polish.Token(0, 2, '観点', self.COMMON)
+        self.assertEqual(polish.refine_proper([token], self.base.get), [token])
+
+
 class ProperNounPositionTests(unittest.TestCase):
     def test_finding_that_only_overlaps_a_proper_noun_is_kept(self):
         source = '多くの企業が導入しています。先日、あるお客様から連絡がありました。'
