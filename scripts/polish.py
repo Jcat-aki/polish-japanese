@@ -195,6 +195,12 @@ NEGATIVE_LISTING = re.compile(r'でもない、[^。]{1,20}?でもない')
 # モノや抽象が人の動作をする言い方
 FALSE_AGENCY = re.compile(r'(?:データ|数字|数値|結果|歴史|事実|経験|現実)(?:が|は)(?:示して|物語って|語って|教えてくれ)'
                           r'|浮き彫りに(?:な|し)|醸成され|結実し')
+# 記号と語彙（stop-ai-slop-jp の観点を参考に独自に定義）
+DASH = re.compile(r'——|──|―{2,}|—')
+DECORATIVE_EMOJI = re.compile('[\U0001F680\U0001F3AF\u2728\U0001F4A1\U0001F525\U0001F449\u2705\U0001F4CC\U0001F64C\U0001F4AA\U0001F389]')
+KATAKANA_METAPHOR = re.compile(r'(?:思考|考え方|マインド|脳|人生|習慣|キャリア|仕事|働き方)(?:の|を)(?:OS|アップデート|ハック|インストール|リファクタリング)')
+PET_WORD = re.compile(r'解像度(?:が|を)(?:高|上げ|低)|解像度の高い|手触り感?|泥臭さ|熱量|営み|腹落ち')
+ACADEMIC_SELF = re.compile(r'本稿|本記事|本論文|筆者')
 # 伝聞の形。言った人や発言の引用が同じ文にあれば、根拠のない前提として扱わない
 HEARSAY = re.compile(r'と言われ|とされ|(?:として|と)語られ')
 ABSTRACT = re.compile(r'最適化|効率化|高度化|知見|共有|活用|推進|強化|向上|実現|確保|促進|価値創出|課題解決|相乗効果|多角的|包括的')
@@ -323,6 +329,24 @@ def inspect(text, analyzer, keep=()):
         add('negative-listing', *m.span(), '「Aでもない、Bでもない」と否定を重ねて答えを引き延ばしている。答えを先に書く。')
     for m in FALSE_AGENCY.finditer(prose):
         add('false-agency', *m.span(), 'モノや抽象が人の動作をしている。誰が何を見て、何をしたのかに書き換える。')
+    for m in DASH.finditer(prose):
+        add('symbol-artifact', *m.span(), 'ダッシュでつないでいる。読点・コロン・改行で区切るか、文を分ける。')
+    for m in DECORATIVE_EMOJI.finditer(prose):
+        add('symbol-artifact', *m.span(), '装飾の絵文字。内容を運んでいなければ削る。')
+    offset = 0
+    for line in prose.splitlines(keepends=True):
+        # 閉じていない ** は、Markdown の太字ではなく装飾の消し忘れ
+        marks = [offset + m.start() for m in re.finditer(r'\*\*', line)]
+        if len(marks) % 2:
+            for start in marks:
+                add('symbol-artifact', start, start + 2, '閉じていない ** がある。装飾の消し忘れなら削る。')
+        offset += len(line)
+    for m in KATAKANA_METAPHOR.finditer(prose):
+        add('katakana-metaphor', *m.span(), '横文字の比喩。「考え方を変える」「習慣をつける」のような普通の言葉に戻す。')
+    for m in PET_WORD.finditer(prose):
+        add('pet-word', *m.span(), 'AIが好んで使う語。何を指すのかを具体的な言葉で書く。1つの文章に何度も撒かない。')
+    for m in ACADEMIC_SELF.finditer(prose):
+        add('academic-self', *m.span(), '論文風の自称。「この記事」「私」のように普通に書く。')
     for m in SELF_IMPORTANCE.finditer(prose):
         add('self-declared-importance', *m.span(),
             '重要さを自分で宣言している。前置きを外し、何がなぜ大事かをそのまま書けば読み手は自分で判断できる。')

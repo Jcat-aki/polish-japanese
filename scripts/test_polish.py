@@ -398,6 +398,40 @@ class RevisionTests(unittest.TestCase):
         rules = [f['rule'] for f in polish.inspect('担当者がデータを示した。', self.analyzer)['findings']]
         self.assertNotIn('false-agency', rules)
 
+    def test_symbol_artifacts_are_flagged(self):
+        for source, expected in [('結論——それは信頼だ。', ['——']),
+                                 ('これは**重要。', ['**']),
+                                 ('導入しました🚀', ['🚀'])]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'symbol-artifact']
+                self.assertEqual(found, expected)
+
+    def test_paired_bold_markup_is_not_a_leftover(self):
+        rules = [f['rule'] for f in polish.inspect('**太字**は残す。', self.analyzer)['findings']]
+        self.assertNotIn('symbol-artifact', rules)
+
+    def test_katakana_metaphors_and_pet_words_are_flagged(self):
+        for source, rule, expected in [('思考のOSをアップデートしよう。', 'katakana-metaphor', '思考のOS'),
+                                       ('習慣をインストールする。', 'katakana-metaphor', '習慣をインストール'),
+                                       ('解像度を上げて考える。', 'pet-word', '解像度を上げ'),
+                                       ('現場の熱量を感じた。', 'pet-word', '熱量')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == rule]
+                self.assertEqual(found, [expected])
+
+    def test_literal_uses_are_not_metaphors_or_pet_words(self):
+        for source in ['アプリをインストールする。', '画面の解像度は1920です。']:
+            with self.subTest(source=source):
+                rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+                self.assertNotIn('katakana-metaphor', rules)
+                self.assertNotIn('pet-word', rules)
+
+    def test_academic_self_reference_is_flagged(self):
+        for source, expected in [('本記事では手順を紹介します。', '本記事'), ('筆者はこう考える。', '筆者'), ('本稿の目的を述べる。', '本稿')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'academic-self']
+                self.assertEqual(found, [expected])
+
     def test_ordinary_use_of_important_words_is_not_flagged(self):
         for source in ['重要な書類を送ります。', '品質が重要です。', '鍵は玄関の棚にあります。']:
             with self.subTest(source=source):
