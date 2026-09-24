@@ -353,16 +353,24 @@ def delta(before, after):
     return {'removed': dict(before - after), 'added': dict(after - before)}
 
 
-def verify(before, after, analyzer, keep=()):
+def verify(before, after, analyzer, keep=(), condense=False):
+    """condense=True は要約・圧縮向け。言及を減らす・削るのは要約では当然なので止めず、消えた語は dropped として知らせる。
+    原文にない語や数値が新しく現れる変化（補った前提になりうる）だけを changes として止める。"""
     b_spans, a_spans = protected_spans(before), protected_spans(after)
     b_plain, a_plain = mask(before, b_spans), mask(after, a_spans)
     b_tokens, a_tokens = analyzer.tokens(b_plain), analyzer.tokens(a_plain)
+    counted = (lambda c: Counter(dict.fromkeys(+c, 1))) if condense else (lambda c: c)
+    compare = lambda b, a: delta(counted(Counter(b)), counted(Counter(a)))
     checks = {
-        'numbers_and_units': delta(Counter(NUMBER.findall(before)), Counter(NUMBER.findall(after))),
-        'protected_regions': delta(Counter(before[a:b] for a, b in b_spans), Counter(after[a:b] for a, b in a_spans)),
-        'ascii_terms': delta(Counter(ASCII_TERM.findall(b_plain)), Counter(ASCII_TERM.findall(a_plain))),
-        'named_terms': delta(named_counts(before, b_tokens, keep), named_counts(after, a_tokens, keep)),
+        'numbers_and_units': compare(NUMBER.findall(before), NUMBER.findall(after)),
+        'protected_regions': compare((before[a:b] for a, b in b_spans), (after[a:b] for a, b in a_spans)),
+        'ascii_terms': compare(ASCII_TERM.findall(b_plain), ASCII_TERM.findall(a_plain)),
+        'named_terms': compare(named_counts(before, b_tokens, keep), named_counts(after, a_tokens, keep)),
     }
+    dropped = {}
+    if condense:
+        dropped = {k: v['removed'] for k, v in checks.items() if v['removed']}
+        checks = {k: {'removed': {}, 'added': v['added']} for k, v in checks.items()}
     checks = {k: v for k, v in checks.items() if v['removed'] or v['added']}
     review = []
     b_sent = re.findall(r'[^。！？!?\r\n]+[。！？!?]?|\r?\n', b_plain)
@@ -376,7 +384,7 @@ def verify(before, after, analyzer, keep=()):
             review.append({'categories': changed, 'before': old, 'after': new})
     return {'schema_version': 1, 'engine': analyzer.info,
             'status': 'changed-protected-content' if checks else 'needs-review' if review else 'no-mechanical-difference',
-            'changes': checks, 'review': review, 'semantic_review_required': True,
+            'changes': checks, **({'dropped': dropped} if condense else {}), 'review': review, 'semantic_review_required': True,
             'limits': '語の出現回数が同じでも主語・数値の対応や因果が変わることがある。意味同一性は保証しない。',
             'diff': ''.join(difflib.unified_diff(before.splitlines(keepends=True), after.splitlines(keepends=True), fromfile='before', tofile='after'))}
 
@@ -530,6 +538,9 @@ def main(argv=None):
         p.add_argument('input')
         if command in ('verify', 'report'):
             p.add_argument('candidate')
+        if command == 'verify':
+            p.add_argument('--condense', action='store_true',
+                           help='要約・圧縮向け。重複した言及の削減は許し、語が消える・現れる変化だけを見る')
         if command == 'fix':
             p.add_argument('--output', required=True, help='新規ファイル。既存ファイルは上書きしない')
         mode = p.add_mutually_exclusive_group()
@@ -550,7 +561,7 @@ def main(argv=None):
         elif args.command == 'verify':
             if args.input == '-' and args.candidate == '-':
                 raise ValueError('標準入力は片方の文書だけに使えます。')
-            result = verify(text, read(args.candidate), analyzer, args.keep)
+            result = verify(text, read(args.candidate), analyzer, args.keep, args.condense)
             code = 1 if result['changes'] else 3 if result['review'] else 0
         elif args.command == 'report':
             # 評価シートは人が読むものなので、JSONではなくMarkdownで出力する
