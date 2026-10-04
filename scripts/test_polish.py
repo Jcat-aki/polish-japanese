@@ -148,6 +148,23 @@ class RevisionTests(unittest.TestCase):
             with self.subTest(after=after):
                 self.assertIn('numbers_and_units', polish.verify(before, after, self.analyzer)['changes'])
 
+    def test_kanji_and_arabic_numerals_of_the_same_value_are_not_a_change(self):
+        # 「一回」を「1回」に書き直しても数は変わらないので、保護対象の変更として止めない
+        for before, after in [('少なくとも一回配信する。', '少なくとも1回配信する。'),
+                              ('保持期間は十四日とする。', '保持期間は14日とする。'),
+                              ('二〇二六年に始めた。', '2026年に始めた。')]:
+            with self.subTest(after=after):
+                self.assertEqual(polish.verify(before, after, self.analyzer)['status'], 'no-mechanical-difference')
+
+    def test_kanji_numeral_with_a_different_value_is_still_a_change(self):
+        result = polish.verify('最大三回まで再試行する。', '最大5回まで再試行する。', self.analyzer)
+        self.assertIn('numbers_and_units', result['changes'])
+
+    def test_kanji_words_that_are_not_counts_are_left_alone(self):
+        # 「十分」（足りている）と「一般」は数ではないので、言い換えても数値の変化にしない
+        result = polish.verify('時間は十分にある。', '時間は足りている。', self.analyzer)
+        self.assertNotIn('numbers_and_units', result['changes'])
+
     def test_condense_allows_dropping_repeated_mentions(self):
         before = '#11 の上に積んだ。#11 を先にマージする。AIが書き、AIが直した。'
         after = '#11 の上に積んだので、先にマージする。AIが書き、直した。'

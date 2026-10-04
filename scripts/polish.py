@@ -423,6 +423,30 @@ def inspect(text, analyzer, keep=()):
                         'style': style_tendency(text)}}
 
 
+# 単位の前の漢数字。「十分」（足りている）や「十字」と取り違えないよう、分・字は単位に含めない
+KANJI_NUMERAL = re.compile(r'(?<![〇一二三四五六七八九十百千])[〇一二三四五六七八九十百千]+'
+                           r'(?=回|件|人|日|年|か月|ヶ月|カ月|月|個|台|倍|秒|時間|週間|円|歳|社|種類|点|行)')
+KANJI_DIGITS = '〇一二三四五六七八九'
+
+
+def kanji_to_number(numeral):
+    if not any(c in '十百千' for c in numeral):
+        return ''.join(str(KANJI_DIGITS.index(c)) for c in numeral)
+    total = digit = 0
+    for c in numeral:
+        if c in KANJI_DIGITS:
+            digit = KANJI_DIGITS.index(c)
+        else:
+            total += (digit or 1) * {'十': 10, '百': 100, '千': 1000}[c]
+            digit = 0
+    return str(total + digit)
+
+
+def arabic_numerals(text):
+    """照合用に、単位の前の漢数字を算用数字にそろえる（「一回」と「1回」を同じ数として数えるため）。"""
+    return KANJI_NUMERAL.sub(lambda m: kanji_to_number(m[0]), text)
+
+
 def delta(before, after):
     return {'removed': dict(before - after), 'added': dict(after - before)}
 
@@ -430,6 +454,8 @@ def delta(before, after):
 def verify(before, after, analyzer, keep=(), condense=False):
     """condense=True は要約・圧縮向け。言及を減らす・削るのは要約では当然なので止めず、消えた語は dropped として知らせる。
     原文にない語や数値が新しく現れる変化（補った前提になりうる）だけを changes として止める。"""
+    original = (before, after)
+    before, after = arabic_numerals(before), arabic_numerals(after)
     b_spans, a_spans = protected_spans(before), protected_spans(after)
     b_plain, a_plain = mask(before, b_spans), mask(after, a_spans)
     b_tokens, a_tokens = analyzer.tokens(b_plain), analyzer.tokens(a_plain)
@@ -460,7 +486,8 @@ def verify(before, after, analyzer, keep=(), condense=False):
             'status': 'changed-protected-content' if checks else 'needs-review' if review else 'no-mechanical-difference',
             'changes': checks, **({'dropped': dropped} if condense else {}), 'review': review, 'semantic_review_required': True,
             'limits': '語の出現回数が同じでも主語・数値の対応や因果が変わることがある。意味同一性は保証しない。',
-            'diff': ''.join(difflib.unified_diff(before.splitlines(keepends=True), after.splitlines(keepends=True), fromfile='before', tofile='after'))}
+            'diff': ''.join(difflib.unified_diff(original[0].splitlines(keepends=True), original[1].splitlines(keepends=True),
+                                                 fromfile='before', tofile='after'))}
 
 
 def fix(text, analyzer, keep=()):
