@@ -51,7 +51,7 @@
 | `added-unsourced` | 「一般的に、」を足す | 3（根拠のない前提が増えた） |
 
 ```bash
-P=.claude/skills/check-side-effects/probes
+P=.claude/skills/check-polish-side-effects/probes
 for f in $P/pairs/before/*.md; do n=$(basename $f); polish-japanese verify $f $P/pairs/after/$n >/dev/null; echo "$n $?"; done
 ```
 
