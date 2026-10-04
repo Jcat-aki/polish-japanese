@@ -1,6 +1,6 @@
 # 根拠と比較範囲
 
-参照確認日：2026-09-23。上流の内容は変わり得る。
+参照確認日：2026-10-04。上流の内容は変わり得る。
 
 - [mecab-unidic-neologd](https://github.com/neologd/mecab-unidic-neologd)：UniDicに新語・固有表現を加える辞書。文体の自然さや主張の妥当性を判定する辞書ではない。固有名詞分類の不完全さが上流でも説明されている。
 - [Claude prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)：出力形式や望む文体を具体的に指示する考え方を参照。「日本語のAI臭さ」の公式な統一規格としては扱わない。
@@ -13,6 +13,7 @@
 | --- | --- | --- |
 | [textlint-rule-preset-ai-writing](https://github.com/textlint-ja/textlint-rule-preset-ai-writing) | 誇張・強調・構造等のルール、MCP連携。一部はkuromojinによる形態素解析。 | 既存の静的検査を置き換えることは目的にせず、早い言い換え案までを一つのスキルにする。 |
 | [stop-ai-slop-jp](https://github.com/iKora128/stop-ai-slop-jp) | 「書き手の不在」をAI臭さの正体とし、立場・主体・構造・語彙・記号の順に直すスキル。反証可能な主張や毒を書き足すことも勧める。 | 「AではなくB」の対比、否定の列挙、モノが人の動作をする言い方、記号の残骸などの観点を参考に、規則は独自に書いた。具体例や毒をエージェントが書き足すことは、補った前提になるので採らない。 |
+| [yomiyasu](https://github.com/nanaism/yomiyasu) | 比喩の動詞（効く・壊れる・静かに・溶かす・倒す）、非生物主語、装飾記号、文末の立場（勧め／決まり／説明）の統一を扱うスキルと静的リンター。正しい使い方を前後の語で除く正規表現と、境界値の検証コーパスを持つ。 | 比喩の動詞・副詞の観点を参考に、規則は独自に書いた（`metaphor-verb`）。評価用コーパスに対して、文字どおりの使い方での誤検知がないことを確かめた。 |
 | [natural-japanese](https://github.com/coji/natural-japanese) | SudachiPyの診断、生成前の構成設計、文体・読みやすさ・文書用途を含む推敲。クイックモードもある。 | 抽象語の重なり・大げささに範囲を絞り、既定は一回の言い換えで人に返す。 |
 
 競合にも形態素解析・内容保持への配慮・クイックモードがある。辞書を変えたこと、速さを志向することだけで優位性を断定しない。この試作ではNEologdを選択できる診断と、数値・名前等の機械照合を組み合わせた。全seedをUniDicへ追加する構成の実機検証を済ませた（構成はruntime.mdに記録）。意味保持の完全保証はしない。
