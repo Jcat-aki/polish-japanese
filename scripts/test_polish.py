@@ -435,7 +435,10 @@ class RevisionTests(unittest.TestCase):
         for source in ['薬が効いてきた。', '冷房が効きすぎている。', '時計が壊れた。', '静かに話してください。',
                        '黙って座っていた。', '砂糖を水に溶かす。', '木を倒した。',
                        # 「安全側に倒す」は以前から使われてきた設計の言い方なので対象外
-                       '判断に迷ったら安全側に倒す。']:
+                       '判断に迷ったら安全側に倒す。',
+                       # 実際に倒れる・倒す動作、酒や薬が後から効く、人の死、人どうしの関係や信頼が壊れる、は比喩の型ではない
+                       '前の方に倒れた。', '右側に倒すと開きます。', '座席を後ろの方に倒す。', 'お酒があとから効いてきた。',
+                       '祖父は静かに死んでいった。', '二人の関係が壊れた。', '信頼が壊れるのは一瞬だ。']:
             with self.subTest(source=source):
                 rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
                 self.assertNotIn('metaphor-verb', rules)
