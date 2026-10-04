@@ -423,9 +423,10 @@ def inspect(text, analyzer, keep=()):
                         'style': style_tendency(text)}}
 
 
-# 単位の前の漢数字。「十分」（足りている）や「十字」と取り違えないよう、分・字は単位に含めない
+# 単位の前の漢数字。「十分」（足りている）や「十字」と取り違えないよう、分・字は単位に含めない。
+# 「一人ひとり」「一日中」「一年中」は数を数えていない慣用句なので除く
 KANJI_NUMERAL = re.compile(r'(?<![〇一二三四五六七八九十百千])[〇一二三四五六七八九十百千]+'
-                           r'(?=回|件|人|日|年|か月|ヶ月|カ月|月|個|台|倍|秒|時間|週間|円|歳|社|種類|点|行)')
+                           r'(?=(?:回|件|人|日|年|か月|ヶ月|カ月|月|個|台|倍|秒|時間|週間|円|歳|社|種類|点|行)(?!中|ひとり|一人))')
 KANJI_DIGITS = '〇一二三四五六七八九'
 
 
@@ -443,8 +444,14 @@ def kanji_to_number(numeral):
 
 
 def arabic_numerals(text):
-    """照合用に、単位の前の漢数字を算用数字にそろえる（「一回」と「1回」を同じ数として数えるため）。"""
-    return KANJI_NUMERAL.sub(lambda m: kanji_to_number(m[0]), text)
+    """照合用に、単位の前の漢数字を算用数字にそろえる（「一回」と「1回」を同じ数として数えるため）。
+    引用・コードなどの保護領域は一字一句守る対象なので、そろえずに残す。"""
+    pieces, cursor = [], 0
+    for start, end in protected_spans(text) + [(len(text), len(text))]:
+        pieces.append(KANJI_NUMERAL.sub(lambda m: kanji_to_number(m[0]), text[cursor:start]))
+        pieces.append(text[start:end])
+        cursor = end
+    return ''.join(pieces)
 
 
 def delta(before, after):

@@ -165,6 +165,19 @@ class RevisionTests(unittest.TestCase):
         result = polish.verify('時間は十分にある。', '時間は足りている。', self.analyzer)
         self.assertNotIn('numbers_and_units', result['changes'])
 
+    def test_idioms_with_kanji_numerals_can_be_reworded(self):
+        # 「一人ひとり」「一日中」は数を数えていないので、言い換えても数値が消えたことにしない
+        for before, after in [('一人ひとりに聞く。', '全員に聞く。'), ('一日中かかった。', '終日かかった。'),
+                              ('一年中混んでいる。', 'いつも混んでいる。')]:
+            with self.subTest(before=before):
+                self.assertNotIn('numbers_and_units', polish.verify(before, after, self.analyzer)['changes'])
+
+    def test_kanji_numerals_inside_quotes_and_code_must_stay_as_written(self):
+        # 引用とコードは一字一句守る対象なので、漢数字を算用数字にしただけでも変更として止める
+        for before, after in [('「一回だけ」と言われた。', '「1回だけ」と言われた。'), ('`retry 一回`', '`retry 1回`')]:
+            with self.subTest(before=before):
+                self.assertIn('protected_regions', polish.verify(before, after, self.analyzer)['changes'])
+
     def test_condense_allows_dropping_repeated_mentions(self):
         before = '#11 の上に積んだ。#11 を先にマージする。AIが書き、AIが直した。'
         after = '#11 の上に積んだので、先にマージする。AIが書き、直した。'
