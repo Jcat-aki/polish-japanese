@@ -450,6 +450,29 @@ class RevisionTests(unittest.TestCase):
                 found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'false-agency']
                 self.assertEqual(found, [expected])
 
+    def test_metaphorical_verbs_and_adverbs_are_flagged(self):
+        for source, expected in [('データが静かに壊れます。', 'データが静かに壊れ'),
+                                 ('重複した処理は黙ってスキップします。', '黙ってスキップ'),
+                                 ('この線引きが地味に効いてきます。', '地味に効い'),
+                                 ('デバッグで時間を溶かさないために。', '時間を溶か'),
+                                 ('迷ったら共通側に倒します。', '側に倒'),
+                                 ('これで前提が壊れる。', '前提が壊れ')]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'metaphor-verb']
+                self.assertEqual(found, [expected])
+
+    def test_literal_uses_of_the_same_verbs_are_not_metaphors(self):
+        for source in ['薬が効いてきた。', '冷房が効きすぎている。', '時計が壊れた。', '静かに話してください。',
+                       '黙って座っていた。', '砂糖を水に溶かす。', '木を倒した。',
+                       # 「安全側に倒す」は以前から使われてきた設計の言い方なので対象外
+                       '判断に迷ったら安全側に倒す。',
+                       # 実際に倒れる・倒す動作、酒や薬が後から効く、人の死、人どうしの関係や信頼が壊れる、は比喩の型ではない
+                       '前の方に倒れた。', '右側に倒すと開きます。', '座席を後ろの方に倒す。', 'お酒があとから効いてきた。',
+                       '祖父は静かに死んでいった。', '二人の関係が壊れた。', '信頼が壊れるのは一瞬だ。']:
+            with self.subTest(source=source):
+                rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+                self.assertNotIn('metaphor-verb', rules)
+
     def test_person_presenting_data_is_not_false_agency(self):
         rules = [f['rule'] for f in polish.inspect('担当者がデータを示した。', self.analyzer)['findings']]
         self.assertNotIn('false-agency', rules)
