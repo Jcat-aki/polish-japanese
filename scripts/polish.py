@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import unicodedata
 
 
 @dataclass(frozen=True)
@@ -281,9 +282,24 @@ RULE_CATEGORY = {
     'symbol-artifact': 'ai-pattern', 'katakana-metaphor': 'ai-pattern', 'pet-word': 'ai-pattern',
     'academic-self': 'ai-pattern', 'closing-suggestion': 'ai-pattern', 'era-opener': 'ai-pattern',
     'inflated-language': 'emphasis', 'self-declared-importance': 'emphasis', 'vague-degree': 'emphasis',
-    'noun-chain': 'readability', 'noun-heavy': 'readability', 'long-sentence': 'readability',
+    'noun-chain': 'readability', 'noun-heavy': 'readability', 'long-sentence': 'readability', 'bold-not-rendered': 'readability',
     'abstract-stack': 'readability', 'redundant-opening': 'readability', 'roundabout-capability': 'readability',
 }
+
+
+def is_markdown_punctuation(char):
+    return unicodedata.category(char)[0] in 'PS'
+
+
+def bold_renders(text, start, end):
+    """start と end の ** で囲んだ太字が、CommonMark（GitHub）で太字として表示されるかを返す。
+    ** のすぐ内側が記号で、すぐ外側が文字（空白・記号・行頭行末以外）だと、** は開き・閉じとして扱われない。"""
+    outside = lambda c: c == '' or c.isspace() or is_markdown_punctuation(c)
+    before, first = text[start - 1:start], text[start + 2:start + 3]
+    last, after = text[end - 1:end], text[end + 2:end + 3]
+    opens = not is_markdown_punctuation(first) or outside(before)
+    closes = not is_markdown_punctuation(last) or outside(after)
+    return opens and closes
 
 
 def is_proper(token):
@@ -364,6 +380,12 @@ def inspect(text, analyzer, keep=()):
         if len(marks) % 2:
             for start in marks:
                 add('symbol-artifact', start, start + 2, '閉じていない ** がある。装飾の消し忘れなら削る。')
+        else:
+            for start, end in zip(marks[::2], marks[1::2]):
+                if not bold_renders(text, start, end):
+                    add('bold-not-rendered', start, end + 2,
+                        '太字にならず ** がそのまま表示される。かっこの内側だけを太字にする、句点を ** の外に出す、'
+                        'それもできなければ ** の外側に半角スペースを入れる。', guard=False)
         offset += len(line)
     for m in KATAKANA_METAPHOR.finditer(prose):
         add('katakana-metaphor', *m.span(), '横文字の比喩。「考え方を変える」「習慣をつける」のような普通の言葉に戻す。')

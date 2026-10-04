@@ -436,6 +436,21 @@ class RevisionTests(unittest.TestCase):
         rules = [f['rule'] for f in polish.inspect('**太字**は残す。', self.analyzer)['findings']]
         self.assertNotIn('symbol-artifact', rules)
 
+    def test_bold_that_markdown_does_not_render_is_flagged(self):
+        # ** のすぐ内側が記号（かっこ・句点）で、すぐ外側が文字だと、GitHubなどでは太字にならず ** がそのまま表示される
+        for source, expected in [('次に**「文書の立場」**を決めます。', ['**「文書の立場」**']),
+                                 ('これは**必須です。**詳しくは下に書きます。', ['**必須です。**'])]:
+            with self.subTest(source=source):
+                found = [f['text'] for f in polish.inspect(source, self.analyzer)['findings'] if f['rule'] == 'bold-not-rendered']
+                self.assertEqual(found, expected)
+
+    def test_bold_that_markdown_renders_is_not_flagged(self):
+        for source in ['**太字**は残す。', '次に「**文書の立場**」を決めます。', 'これは**必須です**。',
+                       '立場は **「勧め」か「決まり」** で決めます。', '**「見出し」**', '`**「コード」**を`は対象外。']:
+            with self.subTest(source=source):
+                rules = [f['rule'] for f in polish.inspect(source, self.analyzer)['findings']]
+                self.assertNotIn('bold-not-rendered', rules)
+
     def test_katakana_metaphors_and_pet_words_are_flagged(self):
         for source, rule, expected in [('思考のOSをアップデートしよう。', 'katakana-metaphor', '思考のOS'),
                                        ('習慣をインストールする。', 'katakana-metaphor', '習慣をインストール'),
