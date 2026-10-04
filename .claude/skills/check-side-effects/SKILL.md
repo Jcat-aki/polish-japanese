@@ -23,7 +23,9 @@ git diff <base>...<head> -- scripts/polish.py
 
 ## 2. 試す文を書く
 
-変更の目的とは逆の側の文を、少なくとも観点ごとに2つずつ書き、scratchpad のファイルに保存する。拾ってほしい文も数個入れ、絞りすぎていないか確かめる。
+よく使う文は `probes/` にある。期待する結果と、わかっている例外は `references/probes.md` に書いてある。まずこれを流し、そのうえで今回の変更のための文を書く。一覧の文だけでは、一覧に入っている文でしか確かめないことになるため。
+
+新しい文は、変更の目的とは逆の側の文を、少なくとも観点ごとに2つずつ書き、scratchpad のファイルに保存する。拾ってほしい文も数個入れ、絞りすぎていないか確かめる。新しい文で副作用が見つかったら、`probes/` と `references/probes.md` に足す。
 
 ### 診断ルールのとき
 
@@ -63,11 +65,11 @@ $PY $C verify main --pairs before_dir after_dir --head fix/x --dic ... --user-di
 
 文章は次を使う。
 
-- 手順2で書いた試す文
+- `probes/*.md`（照合なら `probes/pairs/before` と `probes/pairs/after` の組）と、手順2で書いた試す文
 - このリポジトリの Markdown（README.md、references/*.md、SKILL.md）
 - 参考元のコーパス: `git clone --depth 1 https://github.com/nanaism/yomiyasu` を scratchpad に置き、`tests/corpus/` の `human`（人の文章）、`raw_ai`（AIの出力）、`edge_cases`（文字どおりの使い方）を使う。照合の比較には `raw_ai` と `yomiyasu_rewritten`（書き換え後）を組にする。使うのは文章だけで、コーパスのスクリプトは実行しない
 
-増えた指摘（+）と消えた指摘（-）は、件数だけで判断せず、1行ずつ文を読んで、意図した変化か誤検知・見逃しかを決める。
+`probes/` の結果は `references/probes.md` の期待と見比べ、わかっている例外以外のずれを探す。増えた指摘（+）と消えた指摘（-）は、件数だけで判断せず、1行ずつ文を読んで、意図した変化か誤検知・見逃しかを決める。
 
 ## 4. 並行するブランチを確かめる
 
